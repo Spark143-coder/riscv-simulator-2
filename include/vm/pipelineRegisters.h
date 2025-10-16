@@ -2,31 +2,31 @@
 
 class pipelineRegister{
     private:
-        char instruction[100];
-        char readData1[100];
-        char readData2[100];
-        char immediate[100];
-        char executeSignal[100];
-        char memory[100];
-        char writeBack[100];
+        std::string instruction;
+        std::string readData1;
+        std::string readData2;
+        std::string immediate;
+        std::string executeSignal;
+        std::string memory;
+        std::string writeBack;
     public:
-        pipelineRegister(char instruction[],char readData1[],char readData2[],char immediate[],char memory[],char executeSignal[],char writeBack[]);
+        pipelineRegister(std::string instruction,std::string readData1,std::string readData2,std::string immediate,std::string memory,std::string executeSignal,std::string writeBack);
         void Reset();
-        char* readInstruction() const;
-        char* ReadData1() const;
-        char* ReadData2() const;
-        char* readImmediate() const;
-        char* ExecuteSignal() const;
-        char* MemorySignal() const;
-        char* WriteBackSignal() const;
+        std::string readInstruction() const;
+        std::string ReadData1() const;
+        std::string ReadData2() const;
+        std::string readImmediate() const;
+        std::string ExecuteSignal() const;
+        std::string MemorySignal() const;
+        std::string WriteBackSignal() const;
 
-        void fetchInstruction(char instruction[]);
-        void modifyReadData1(char readData1[]);
-        void modifyReadData2(char readData2[]);
-        void modifyImmediate(char immediate[]);
-        void modifyMemorySignal(char memory[]);
-        void modifyexecuteSignal(char executeSignal[]);
-        void modifyWriteBackSignal(char writeBack[]);
+        void fetchInstruction(std::string instruction[]);
+        void modifyReadData1(std::string readData1[]);
+        void modifyReadData2(std::string readData2[]);
+        void modifyImmediate(std::string immediate[]);
+        void modifyMemorySignal(std::string memory[]);
+        void modifyexecuteSignal(std::string executeSignal[]);
+        void modifyWriteBackSignal(std::string writeBack[]);
         
 };
 

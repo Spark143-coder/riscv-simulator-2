@@ -20,13 +20,13 @@ class pipelineRegister{
         std::string MemorySignal() const;
         std::string WriteBackSignal() const;
 
-        void fetchInstruction(std::string instruction[]);
-        void modifyReadData1(std::string readData1[]);
-        void modifyReadData2(std::string readData2[]);
-        void modifyImmediate(std::string immediate[]);
-        void modifyMemorySignal(std::string memory[]);
-        void modifyexecuteSignal(std::string executeSignal[]);
-        void modifyWriteBackSignal(std::string writeBack[]);
+        void fetchInstruction(std::string instruction);
+        void modifyReadData1(std::string readData1);
+        void modifyReadData2(std::string readData2);
+        void modifyImmediate(std::string immediate);
+        void modifyMemorySignal(std::string memory);
+        void modifyexecuteSignal(std::string executeSignal);
+        void modifyWriteBackSignal(std::string writeBack);
         
 };
 

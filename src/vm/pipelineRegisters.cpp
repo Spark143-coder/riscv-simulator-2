@@ -1,6 +1,6 @@
-#include<bits/stdc++.h>
-#include<vm/pipelineRegisters.h>
-#include "vm/rvss/rvss_vm.h"
+#include <bits/stdc++.h>
+#include "vm/pipelineRegisters.h"
+#include "vm/rvss/pipelined_rvss_vm.h"
 
 pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3){
     this->instruction = instruction;
@@ -95,7 +95,7 @@ uint pipelineRegister::readIsDouble() const{
 }
 
 uint8_t pipelineRegister::readRs2() const{
-
+    return (this->rs2);
 }
 
 uint pipelineRegister::readIsCSR() const{

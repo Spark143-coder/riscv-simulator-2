@@ -1,4 +1,5 @@
 #include<bits/stdc++.h>
+#include "vm/rvss/pipelined_rvss_vm.h"
 
 class pipelineRegister{
     private:

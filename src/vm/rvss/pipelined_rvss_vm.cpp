@@ -4,7 +4,7 @@
  * @author Vishank Singh, https://github.com/VishankSingh
  */
 
-#include "vm/rvss/rvss_vm.h"
+#include "vm/rvss/pipelined_rvss_vm.h"
 
 #include "utils.h"
 #include "globals.h"
@@ -35,15 +35,19 @@ RVSSVM::RVSSVM() : VmBase() {
 RVSSVM::~RVSSVM() = default;
 
 void RVSSVM::Fetch() {
+  // std::cout<<"Fetch"<<std::endl;
   current_instruction_ = memory_controller_.ReadWord(program_counter_);
+  // std::cout<<"Current Instruction: "<<current_instruction_<<std::endl;
   IF_ID.fetchInstruction(current_instruction_);
   UpdateProgramCounter(4);
 }
 
 void RVSSVM::Decode() {
 
+    // std::cout<<"Decode"<<std::endl;
     control_unit_.SetControlSignals(IF_ID.readInstruction());
-    uint8_t currentInstruction = IF_ID.readInstruction();
+    // std::cout<<"Current Instruction: "<<IF_ID.readInstruction()<<std::endl;
+    uint32_t currentInstruction = IF_ID.readInstruction();
     uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
     uint8_t rs2 = (currentInstruction >> 20) & 0b11111;
     uint8_t opcode = currentInstruction & 0b1111111;
@@ -53,6 +57,9 @@ void RVSSVM::Decode() {
     uint64_t reg2_value = registers_.ReadGpr(rs2);
     alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
     
+    std::cout<<"imm: "<<imm<<std::endl;
+    // std::cout<<"rs1: "<<reg1_value<<std::endl;
+
     ID_EX.modifyReadData1(reg1_value);
     ID_EX.modifyReadData2(reg2_value);
     ID_EX.modifyImmediate(imm);
@@ -72,10 +79,11 @@ void RVSSVM::Decode() {
 }
 
 void RVSSVM::Execute() {
+  
+  // std::cout<<"Execute"<<std::endl;
   uint8_t opcode = ID_EX.readOpcode();
   uint8_t funct3 = ID_EX.readFunct3();
 
-  uint8_t currentInstruction = IF_ID.readInstruction();
   if (opcode == get_instr_encoding(Instruction::kecall).opcode &&
       funct3 == get_instr_encoding(Instruction::kecall).funct3) {
       HandleSyscall();
@@ -101,8 +109,12 @@ void RVSSVM::Execute() {
     reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
   }
 
+  // std::cout<<"rs2: "<<reg2_value<<std::endl;
+
   alu::AluOp aluOperation = ID_EX.readAluOp();
   std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
+
+  // std::cout<<"result: "<<execution_result_<<std::endl;
   EX_MEM.modifyExecutionResult(execution_result_);
   EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
   EX_MEM.modifyMemRead(ID_EX.MemRead());
@@ -432,6 +444,7 @@ void RVSSVM::HandleSyscall() {
 }
 
 void RVSSVM::WriteMemory() {
+  // std::cout<<"Write Memory"<<std::endl;
   uint8_t opcode = EX_MEM.readOpcode();
   uint8_t rs2 = EX_MEM.readRs2();
   uint8_t funct3 = EX_MEM.readFunct3();
@@ -615,7 +628,7 @@ void RVSSVM::WriteMemoryDouble() {
 }
 
 void RVSSVM::WriteBack() {
-  uint8_t currentInstruction = MEM_WB.readInstruction();
+  // std::cout<<"Writeback"<<std::endl;
   uint8_t opcode = MEM_WB.readOpcode();
   uint8_t funct3 = MEM_WB.readOpcode();
   uint8_t rd = MEM_WB.readRd();
@@ -863,6 +876,21 @@ void RVSSVM::Run() {
     cycle_s_++;
     std::cout << "Program Counter: " << program_counter_ << std::endl;
   }
+  WriteBack();
+  WriteMemory();
+  Execute();
+  Decode();
+
+  WriteBack();
+  WriteMemory();
+  Execute();
+
+  WriteBack();
+  WriteMemory();
+
+  WriteBack();
+
+  for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<std::endl;
   if (program_counter_ >= program_size_) {
     std::cout << "VM_PROGRAM_END" << std::endl;
     output_status_ = "VM_PROGRAM_END";

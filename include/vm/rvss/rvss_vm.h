@@ -160,7 +160,7 @@ class RVSSVM : public VmBase {
   bool IsStopRequested() const {
     return stop_requested_;
   }
-  
+
   void ClearStop() {
     stop_requested_ = false;
   }

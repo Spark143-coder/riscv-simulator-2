@@ -10,12 +10,13 @@
 #include "globals.h"
 #include "common/instructions.h"
 #include "config.h"
+#include "vm/pipelineRegisters.h"
 
 #include <cctype>
 #include <cstdint>
 #include <iostream>
 #include <tuple>
-#include <stack>  
+#include <stack>
 #include <algorithm>
 #include <thread>
 #include <mutex>
@@ -26,7 +27,6 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
-
 RVSSVM::RVSSVM() : VmBase() {
   DumpRegisters(globals::registers_dump_file_path, registers_);
   DumpState(globals::vm_state_dump_file_path);
@@ -36,69 +36,104 @@ RVSSVM::~RVSSVM() = default;
 
 void RVSSVM::Fetch() {
   current_instruction_ = memory_controller_.ReadWord(program_counter_);
+  IF_ID.fetchInstruction(current_instruction_);
   UpdateProgramCounter(4);
 }
 
 void RVSSVM::Decode() {
-  control_unit_.SetControlSignals(current_instruction_);
+
+    control_unit_.SetControlSignals(IF_ID.readInstruction());
+    uint8_t currentInstruction = IF_ID.readInstruction();
+    uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
+    uint8_t rs2 = (currentInstruction >> 20) & 0b11111;
+    uint8_t opcode = currentInstruction & 0b1111111;
+    uint8_t funct3 = (currentInstruction >> 12) & 0b111;
+    int32_t imm = ImmGenerator(currentInstruction);
+    uint64_t reg1_value = registers_.ReadGpr(rs1);
+    uint64_t reg2_value = registers_.ReadGpr(rs2);
+    alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
+    
+    ID_EX.modifyReadData1(reg1_value);
+    ID_EX.modifyReadData2(reg2_value);
+    ID_EX.modifyImmediate(imm);
+    ID_EX.modifyexecuteSignal(control_unit_.GetAluSrc());
+    ID_EX.modifyOpcode(opcode);
+    ID_EX.modifyFunct3(funct3);
+    ID_EX.modifyAluOp(aluOperation);
+    ID_EX.modifyMemRead(control_unit_.GetMemRead());
+    ID_EX.modifyWriteBackSignal(control_unit_.GetRegWrite());
+    ID_EX.modifyMemWrite(control_unit_.GetMemWrite());
+    ID_EX.modifyIsBranch(control_unit_.GetBranch());
+    ID_EX.modifyIsFloat(instruction_set::isFInstruction(currentInstruction));
+    ID_EX.modifyIsDouble(instruction_set::isDInstruction(currentInstruction));
+    ID_EX.modifyIsCSR(opcode==0b1110011);
+    ID_EX.modifyRd((currentInstruction >> 7) & 0b11111);
+    ID_EX.modifyRs2(rs2);
 }
 
 void RVSSVM::Execute() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
+  uint8_t opcode = ID_EX.readOpcode();
+  uint8_t funct3 = ID_EX.readFunct3();
 
-  if (opcode == get_instr_encoding(Instruction::kecall).opcode && 
+  uint8_t currentInstruction = IF_ID.readInstruction();
+  if (opcode == get_instr_encoding(Instruction::kecall).opcode &&
       funct3 == get_instr_encoding(Instruction::kecall).funct3) {
-    HandleSyscall();
-    return;
+      HandleSyscall();
+      return;
   }
 
-  if (instruction_set::isFInstruction(current_instruction_)) { // RV64 F
+  if (ID_EX.readIsFloat()) { // RV64 F
     ExecuteFloat();
     return;
-  } else if (instruction_set::isDInstruction(current_instruction_)) {
+  } else if (ID_EX.readIsDouble()) {
     ExecuteDouble();
     return;
-  } else if (opcode==0b1110011) {
+  } else if (ID_EX.readIsCSR()) {
     ExecuteCsr();
     return;
   }
-
-  uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
-  uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
-
-  int32_t imm = ImmGenerator(current_instruction_);
-
-  uint64_t reg1_value = registers_.ReadGpr(rs1);
-  uint64_t reg2_value = registers_.ReadGpr(rs2);
-
+  uint64_t reg1_value = ID_EX.ReadData1();
+  uint64_t reg2_value = ID_EX.ReadData2();
+  int32_t imm = ID_EX.readImmediate();
   bool overflow = false;
 
-  if (control_unit_.GetAluSrc()) {
+  if (ID_EX.ExecuteSignal()) {
     reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
   }
 
-  alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
+  alu::AluOp aluOperation = ID_EX.readAluOp();
   std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
+  EX_MEM.modifyExecutionResult(execution_result_);
+  EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
+  EX_MEM.modifyMemRead(ID_EX.MemRead());
+  EX_MEM.modifyMemWrite(ID_EX.MemWrite());
+  EX_MEM.modifyWriteBackSignal(ID_EX.WriteBackSignal());
+  EX_MEM.modifyOpcode(ID_EX.readOpcode());
+  EX_MEM.modifyFunct3(ID_EX.readFunct3());
+  EX_MEM.modifyImmediate(ID_EX.readImmediate());
+  EX_MEM.modifyIsFloat(ID_EX.readIsFloat());
+  EX_MEM.modifyIsDouble(ID_EX.readIsDouble());
+  EX_MEM.modifyIsCSR(ID_EX.readIsCSR());
+  EX_MEM.modifyRd(ID_EX.readRd());
+  EX_MEM.modifyRs2(ID_EX.readRs2());
 
-
-  if (control_unit_.GetBranch()) {
-    if (opcode==get_instr_encoding(Instruction::kjalr).opcode || 
+  if (ID_EX.readIsBranch()) {
+    if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
         opcode==get_instr_encoding(Instruction::kjal).opcode) {
       next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
       UpdateProgramCounter(-4);
       return_address_ = program_counter_ + 4;
-      if (opcode==get_instr_encoding(Instruction::kjalr).opcode) { 
+      if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
         UpdateProgramCounter(-program_counter_ + (execution_result_));
       } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
         UpdateProgramCounter(imm);
       }
     } else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
-               opcode==get_instr_encoding(Instruction::kbne).opcode ||
-               opcode==get_instr_encoding(Instruction::kblt).opcode ||
-               opcode==get_instr_encoding(Instruction::kbge).opcode ||
-               opcode==get_instr_encoding(Instruction::kbltu).opcode ||
-               opcode==get_instr_encoding(Instruction::kbgeu).opcode) {
+                opcode==get_instr_encoding(Instruction::kbne).opcode ||
+                opcode==get_instr_encoding(Instruction::kblt).opcode ||
+                opcode==get_instr_encoding(Instruction::kbge).opcode ||
+                opcode==get_instr_encoding(Instruction::kbltu).opcode ||
+                opcode==get_instr_encoding(Instruction::kbgeu).opcode) {
       switch (funct3) {
         case 0b000: {// BEQ
           branch_flag_ = (execution_result_==0);
@@ -141,7 +176,6 @@ void RVSSVM::Execute() {
 
   if (opcode==get_instr_encoding(Instruction::kauipc).opcode) { // AUIPC
     execution_result_ = static_cast<int64_t>(program_counter_) - 4 + (imm << 12);
-
   }
 }
 
@@ -307,8 +341,8 @@ void RVSSVM::HandleSyscall() {
           std::cout << "VM_STDIN_START" << std::endl;
           output_status_ = "VM_STDIN_START";
           std::unique_lock<std::mutex> lock(input_mutex_);
-          input_cv_.wait(lock, [this]() { 
-            return !input_queue_.empty(); 
+          input_cv_.wait(lock, [this]() {
+            return !input_queue_.empty();
           });
           output_status_ = "VM_STDIN_END";
           std::cout << "VM_STDIN_END" << std::endl;
@@ -398,55 +432,69 @@ void RVSSVM::HandleSyscall() {
 }
 
 void RVSSVM::WriteMemory() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
-  uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
+  uint8_t opcode = EX_MEM.readOpcode();
+  uint8_t rs2 = EX_MEM.readRs2();
+  uint8_t funct3 = EX_MEM.readFunct3();
 
   if (opcode == 0b1110011 && funct3 == 0b000) {
     return;
   }
 
-  if (instruction_set::isFInstruction(current_instruction_)) { // RV64 F
+  if (EX_MEM.readIsFloat()) { // RV64 F
     WriteMemoryFloat();
     return;
-  } else if (instruction_set::isDInstruction(current_instruction_)) {
+  } else if (EX_MEM.readIsDouble()) {
     WriteMemoryDouble();
     return;
   }
 
-  if (control_unit_.GetMemRead()) {
+  int64_t executionResult = EX_MEM.readExecutionResult();
+  if (EX_MEM.MemRead()) {
     switch (funct3) {
       case 0b000: {// LB
-        memory_result_ = static_cast<int8_t>(memory_controller_.ReadByte(execution_result_));
+        memory_result_ = static_cast<int8_t>(memory_controller_.ReadByte(executionResult));
         break;
       }
       case 0b001: {// LH
-        memory_result_ = static_cast<int16_t>(memory_controller_.ReadHalfWord(execution_result_));
+        memory_result_ = static_cast<int16_t>(memory_controller_.ReadHalfWord(executionResult));
         break;
       }
       case 0b010: {// LW
-        memory_result_ = static_cast<int32_t>(memory_controller_.ReadWord(execution_result_));
+        memory_result_ = static_cast<int32_t>(memory_controller_.ReadWord(executionResult));
         break;
       }
       case 0b011: {// LD
-        memory_result_ = memory_controller_.ReadDoubleWord(execution_result_);
+        memory_result_ = memory_controller_.ReadDoubleWord(executionResult);
         break;
       }
       case 0b100: {// LBU
-        memory_result_ = static_cast<uint8_t>(memory_controller_.ReadByte(execution_result_));
+        memory_result_ = static_cast<uint8_t>(memory_controller_.ReadByte(executionResult));
         break;
       }
       case 0b101: {// LHU
-        memory_result_ = static_cast<uint16_t>(memory_controller_.ReadHalfWord(execution_result_));
+        memory_result_ = static_cast<uint16_t>(memory_controller_.ReadHalfWord(executionResult));
         break;
       }
       case 0b110: {// LWU
-        memory_result_ = static_cast<uint32_t>(memory_controller_.ReadWord(execution_result_));
+        memory_result_ = static_cast<uint32_t>(memory_controller_.ReadWord(executionResult));
         break;
       }
     }
   }
-
+  MEM_WB.modifyMemoryResult(memory_result_);
+  MEM_WB.modifyExecutionResult(executionResult);
+  MEM_WB.modifyMemRead(EX_MEM.MemRead());
+  MEM_WB.modifyMemWrite(EX_MEM.MemWrite());
+  MEM_WB.modifyWriteBackSignal(EX_MEM.WriteBackSignal());
+  MEM_WB.modifyOpcode(EX_MEM.readOpcode());
+  MEM_WB.modifyRd(EX_MEM.readRd());
+  MEM_WB.modifyRs2(EX_MEM.readRs2());
+  MEM_WB.modifyFunct3(EX_MEM.readFunct3());
+  MEM_WB.modifyImmediate(EX_MEM.readImmediate());
+  MEM_WB.modifyIsFloat(EX_MEM.readIsFloat());
+  MEM_WB.modifyIsDouble(EX_MEM.readIsDouble());
+  MEM_WB.modifyIsCSR(EX_MEM.readIsCSR());
+  MEM_WB.modifyIsBranch(EX_MEM.readIsBranch());
   uint64_t addr = 0;
   std::vector<uint8_t> old_bytes_vec;
   std::vector<uint8_t> new_bytes_vec;
@@ -454,43 +502,43 @@ void RVSSVM::WriteMemory() {
   // TODO: use direct read to read memory for undo/redo functionality, i.e. ReadByte -> ReadByte_d
 
 
-  if (control_unit_.GetMemWrite()) {
+  if (EX_MEM.MemWrite()) {
     switch (funct3) {
       case 0b000: {// SB
-        addr = execution_result_;
+        addr = executionResult;
         old_bytes_vec.push_back(memory_controller_.ReadByte(addr));
         memory_controller_.WriteByte(execution_result_, registers_.ReadGpr(rs2) & 0xFF);
         new_bytes_vec.push_back(memory_controller_.ReadByte(addr));
         break;
       }
       case 0b001: {// SH
-        addr = execution_result_;
+        addr = executionResult;
         for (size_t i = 0; i < 2; ++i) {
           old_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
-        memory_controller_.WriteHalfWord(execution_result_, registers_.ReadGpr(rs2) & 0xFFFF);
+        memory_controller_.WriteHalfWord(executionResult, registers_.ReadGpr(rs2) & 0xFFFF);
         for (size_t i = 0; i < 2; ++i) {
           new_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
         break;
       }
       case 0b010: {// SW
-        addr = execution_result_;
+        addr = executionResult;
         for (size_t i = 0; i < 4; ++i) {
           old_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
-        memory_controller_.WriteWord(execution_result_, registers_.ReadGpr(rs2) & 0xFFFFFFFF);
+        memory_controller_.WriteWord(executionResult, registers_.ReadGpr(rs2) & 0xFFFFFFFF);
         for (size_t i = 0; i < 4; ++i) {
           new_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
         break;
       }
       case 0b011: {// SD
-        addr = execution_result_;
+        addr = executionResult;
         for (size_t i = 0; i < 8; ++i) {
           old_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
-        memory_controller_.WriteDoubleWord(execution_result_, registers_.ReadGpr(rs2) & 0xFFFFFFFFFFFFFFFF);
+        memory_controller_.WriteDoubleWord(executionResult, registers_.ReadGpr(rs2) & 0xFFFFFFFFFFFFFFFF);
         for (size_t i = 0; i < 8; ++i) {
           new_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
@@ -567,20 +615,23 @@ void RVSSVM::WriteMemoryDouble() {
 }
 
 void RVSSVM::WriteBack() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
-  uint8_t rd = (current_instruction_ >> 7) & 0b11111;
-  int32_t imm = ImmGenerator(current_instruction_);
+  uint8_t currentInstruction = MEM_WB.readInstruction();
+  uint8_t opcode = MEM_WB.readOpcode();
+  uint8_t funct3 = MEM_WB.readOpcode();
+  uint8_t rd = MEM_WB.readRd();
+  int32_t imm = MEM_WB.readImmediate();
+  int64_t memoryResult = MEM_WB.readMemoryResult();
+  int64_t executionResult = MEM_WB.readExecutionResult();
 
-  if (opcode == get_instr_encoding(Instruction::kecall).opcode && 
+  if (opcode == get_instr_encoding(Instruction::kecall).opcode &&
       funct3 == get_instr_encoding(Instruction::kecall).funct3) { // ecall
     return;
   }
 
-  if (instruction_set::isFInstruction(current_instruction_)) { // RV64 F
+  if (MEM_WB.readIsFloat()) { // RV64 F
     WriteBackFloat();
     return;
-  } else if (instruction_set::isDInstruction(current_instruction_)) {
+  } else if (MEM_WB.readIsDouble()) {
     WriteBackDouble();
     return;
   } else if (opcode==0b1110011) { // CSR opcode
@@ -593,16 +644,16 @@ void RVSSVM::WriteBack() {
   unsigned int reg_type = 0; // 0 for GPR, 1 for CSR, 2 for FPR
 
 
-  if (control_unit_.GetRegWrite()) { 
+  if (MEM_WB.WriteBackSignal()) {
     switch (opcode) {
       case get_instr_encoding(Instruction::kRtype).opcode: /* R-Type */
       case get_instr_encoding(Instruction::kItype).opcode: /* I-Type */
       case get_instr_encoding(Instruction::kauipc).opcode: /* AUIPC */ {
-        registers_.WriteGpr(rd, execution_result_);
+        registers_.WriteGpr(rd, executionResult);
         break;
       }
-      case get_instr_encoding(Instruction::kLoadType).opcode: /* Load */ { 
-        registers_.WriteGpr(rd, memory_result_);
+      case get_instr_encoding(Instruction::kLoadType).opcode: /* Load */ {
+        registers_.WriteGpr(rd, memoryResult);
         break;
       }
       case get_instr_encoding(Instruction::kjalr).opcode: /* JALR */
@@ -801,14 +852,12 @@ void RVSSVM::Run() {
   uint64_t instruction_executed = 0;
 
   while (!stop_requested_ && program_counter_ < program_size_) {
-    if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
-      break;
-
-    Fetch();
-    Decode();
-    Execute();
-    WriteMemory();
+    if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
     WriteBack();
+    WriteMemory();
+    Execute();
+    Decode();
+    Fetch();
     instructions_retired_++;
     instruction_executed++;
     cycle_s_++;
@@ -830,11 +879,11 @@ void RVSSVM::DebugRun() {
       break;
     current_delta_.old_pc = program_counter_;
     if (std::find(breakpoints_.begin(), breakpoints_.end(), program_counter_) == breakpoints_.end()) {
-      Fetch();
-      Decode();
-      Execute();
-      WriteMemory();
-      WriteBack();
+    WriteBack();
+    WriteMemory();
+    Execute();
+    Decode();
+    Fetch();
       instructions_retired_++;
       instruction_executed++;
       cycle_s_++;
@@ -877,11 +926,11 @@ void RVSSVM::DebugRun() {
 void RVSSVM::Step() {
   current_delta_.old_pc = program_counter_;
   if (program_counter_ < program_size_) {
-    Fetch();
-    Decode();
-    Execute();
-    WriteMemory();
     WriteBack();
+    WriteMemory();
+    Execute();
+    Decode();
+    Fetch();
     instructions_retired_++;
     cycle_s_++;
     std::cout << "Program Counter: " << std::hex << program_counter_ << std::dec << std::endl;

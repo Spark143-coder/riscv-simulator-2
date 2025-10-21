@@ -2,7 +2,7 @@
 #include "assembler/assembler.h"
 #include "utils.h"
 #include "globals.h"
-#include "vm/rvss/rvss_vm.h"
+#include "vm/rvss/pipelined_rvss_vm.h"
 #include "vm_runner.h"
 #include "command_handler.h"
 #include "config.h"
@@ -120,12 +120,12 @@ int main(int argc, char *argv[]) {
 
   auto launch_vm_thread = [&](auto fn) {
     if (vm_thread.joinable()) {
-      vm.RequestStop();   
+      vm.RequestStop();
       vm_thread.join();
     }
     vm_running = true;
     vm_thread = std::thread([&]() {
-      fn();               
+      fn();
       vm_running = false;
     });
   };

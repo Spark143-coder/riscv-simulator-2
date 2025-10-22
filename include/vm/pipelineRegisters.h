@@ -6,7 +6,6 @@ class pipelineRegister{
         uint32_t instruction;
         uint64_t readData1;
         uint64_t readData2;
-        uint8_t rs2;
         uint8_t rd;
         int64_t immediate;
         uint executeSignal;
@@ -22,8 +21,12 @@ class pipelineRegister{
         uint isFloat;
         uint isDouble;
         uint isCSR;
+        uint8_t rs1;
+        uint8_t rs2;
+        uint8_t rs3;
+        uint8_t funct7;
     public:
-        pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3);
+        pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd);
         void Reset();
         uint32_t readInstruction() const;
         uint64_t ReadData1() const;
@@ -43,7 +46,10 @@ class pipelineRegister{
         uint readIsDouble() const;
         uint readIsCSR() const;
         uint8_t readRd() const;
+        uint8_t readRs1() const;
         uint8_t readRs2() const;
+        uint8_t readRs3() const;
+        uint8_t readFunct7() const;
 
         void fetchInstruction(uint32_t instruction);
         void modifyReadData1(uint64_t readData1);
@@ -63,7 +69,10 @@ class pipelineRegister{
         void modifyIsDouble(uint isDouble);
         void modifyIsCSR(uint isCSR);
         void modifyRd(uint8_t Rd);
+        void modifyRs1(uint8_t rs1);
         void modifyRs2(uint8_t rs2);
+        void modifyRs3(uint8_t rs3);
+        void modifyFunct7(uint8_t funct7);
 };
 
 extern pipelineRegister IF_ID;

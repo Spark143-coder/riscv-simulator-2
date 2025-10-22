@@ -52,12 +52,13 @@ void RVSSVM::Decode() {
     uint8_t rs2 = (currentInstruction >> 20) & 0b11111;
     uint8_t opcode = currentInstruction & 0b1111111;
     uint8_t funct3 = (currentInstruction >> 12) & 0b111;
+    uint8_t funct7 = (currentInstruction >> 25) & 0b1111111;
     int32_t imm = ImmGenerator(currentInstruction);
     uint64_t reg1_value = registers_.ReadGpr(rs1);
     uint64_t reg2_value = registers_.ReadGpr(rs2);
     alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
     
-    std::cout<<"imm: "<<imm<<std::endl;
+    //std::cout<<"imm: "<<imm<<std::endl;
     // std::cout<<"rs1: "<<reg1_value<<std::endl;
 
     ID_EX.modifyReadData1(reg1_value);
@@ -66,6 +67,7 @@ void RVSSVM::Decode() {
     ID_EX.modifyexecuteSignal(control_unit_.GetAluSrc());
     ID_EX.modifyOpcode(opcode);
     ID_EX.modifyFunct3(funct3);
+    ID_EX.modifyFunct7(funct7);
     ID_EX.modifyAluOp(aluOperation);
     ID_EX.modifyMemRead(control_unit_.GetMemRead());
     ID_EX.modifyWriteBackSignal(control_unit_.GetRegWrite());
@@ -75,7 +77,9 @@ void RVSSVM::Decode() {
     ID_EX.modifyIsDouble(instruction_set::isDInstruction(currentInstruction));
     ID_EX.modifyIsCSR(opcode==0b1110011);
     ID_EX.modifyRd((currentInstruction >> 7) & 0b11111);
+    ID_EX.modifyRs1(rs1);
     ID_EX.modifyRs2(rs2);
+    ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
 }
 
 void RVSSVM::Execute() {
@@ -127,7 +131,10 @@ void RVSSVM::Execute() {
   EX_MEM.modifyIsDouble(ID_EX.readIsDouble());
   EX_MEM.modifyIsCSR(ID_EX.readIsCSR());
   EX_MEM.modifyRd(ID_EX.readRd());
+  EX_MEM.modifyFunct7(ID_EX.readFunct7());
+  EX_MEM.modifyRs1(ID_EX.readRs1());
   EX_MEM.modifyRs2(ID_EX.readRs2());
+  EX_MEM.modifyRs3(ID_EX.readRs3());
 
   if (ID_EX.readIsBranch()) {
     if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
@@ -189,20 +196,21 @@ void RVSSVM::Execute() {
   if (opcode==get_instr_encoding(Instruction::kauipc).opcode) { // AUIPC
     execution_result_ = static_cast<int64_t>(program_counter_) - 4 + (imm << 12);
   }
+  EX_MEM.modifyExecutionResult(execution_result_);
 }
 
 void RVSSVM::ExecuteFloat() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
-  uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
+  uint8_t opcode = ID_EX.readOpcode();
+  uint8_t funct3 = ID_EX.readFunct3();
+  uint8_t funct7 = ID_EX.readFunct7();
   uint8_t rm = funct3;
-  uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
-  uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
-  uint8_t rs3 = (current_instruction_ >> 27) & 0b11111;
+  uint8_t rs1 = ID_EX.readRs1();
+  uint8_t rs2 = ID_EX.readRs2();
+  uint8_t rs3 = ID_EX.readRs3();
 
   uint8_t fcsr_status = 0;
 
-  int32_t imm = ImmGenerator(current_instruction_);
+  int32_t imm = ID_EX.readImmediate();
 
   if (rm==0b111) {
     rm = registers_.ReadCsr(0x002);
@@ -216,31 +224,47 @@ void RVSSVM::ExecuteFloat() {
     reg1_value = registers_.ReadGpr(rs1);
   }
 
-  if (control_unit_.GetAluSrc()) {
+  if (ID_EX.ExecuteSignal()) {
     reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
   }
 
-  alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
+  alu::AluOp aluOperation = ID_EX.readAluOp();
   std::tie(execution_result_, fcsr_status) = alu::Alu::fpexecute(aluOperation, reg1_value, reg2_value, reg3_value, rm);
 
   // std::cout << "+++++ Float execution result: " << execution_result_ << std::endl;
 
+  EX_MEM.modifyExecutionResult(execution_result_);
+  EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
+  EX_MEM.modifyMemRead(ID_EX.MemRead());
+  EX_MEM.modifyMemWrite(ID_EX.MemWrite());
+  EX_MEM.modifyWriteBackSignal(ID_EX.WriteBackSignal());
+  EX_MEM.modifyOpcode(ID_EX.readOpcode());
+  EX_MEM.modifyFunct3(ID_EX.readFunct3());
+  EX_MEM.modifyImmediate(ID_EX.readImmediate());
+  EX_MEM.modifyIsFloat(ID_EX.readIsFloat());
+  EX_MEM.modifyIsDouble(ID_EX.readIsDouble());
+  EX_MEM.modifyIsCSR(ID_EX.readIsCSR());
+  EX_MEM.modifyRd(ID_EX.readRd());
+  EX_MEM.modifyFunct7(ID_EX.readFunct7());
+  EX_MEM.modifyRs1(ID_EX.readRs1());
+  EX_MEM.modifyRs2(ID_EX.readRs2());
+  EX_MEM.modifyRs3(ID_EX.readRs3());
 
   registers_.WriteCsr(0x003, fcsr_status);
 }
 
 void RVSSVM::ExecuteDouble() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
-  uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
+  uint8_t opcode = ID_EX.readOpcode();
+  uint8_t funct3 = ID_EX.readFunct3();
+  uint8_t funct7 = ID_EX.readFunct7();
   uint8_t rm = funct3;
-  uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
-  uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
-  uint8_t rs3 = (current_instruction_ >> 27) & 0b11111;
+  uint8_t rs1 = ID_EX.readRs1();
+  uint8_t rs2 = ID_EX.readRs2();
+  uint8_t rs3 = ID_EX.readRs3();
 
   uint8_t fcsr_status = 0;
 
-  int32_t imm = ImmGenerator(current_instruction_);
+  int32_t imm = ImmGenerator(ID_EX.readImmediate());
 
   uint64_t reg1_value = registers_.ReadFpr(rs1);
   uint64_t reg2_value = registers_.ReadFpr(rs2);
@@ -250,12 +274,29 @@ void RVSSVM::ExecuteDouble() {
     reg1_value = registers_.ReadGpr(rs1);
   }
 
-  if (control_unit_.GetAluSrc()) {
+  if (ID_EX.ExecuteSignal()) {
     reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
   }
 
-  alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
+  alu::AluOp aluOperation = ID_EX.readAluOp();
   std::tie(execution_result_, fcsr_status) = alu::Alu::dfpexecute(aluOperation, reg1_value, reg2_value, reg3_value, rm);
+
+  EX_MEM.modifyExecutionResult(execution_result_);
+  EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
+  EX_MEM.modifyMemRead(ID_EX.MemRead());
+  EX_MEM.modifyMemWrite(ID_EX.MemWrite());
+  EX_MEM.modifyWriteBackSignal(ID_EX.WriteBackSignal());
+  EX_MEM.modifyOpcode(ID_EX.readOpcode());
+  EX_MEM.modifyFunct3(ID_EX.readFunct3());
+  EX_MEM.modifyImmediate(ID_EX.readImmediate());
+  EX_MEM.modifyIsFloat(ID_EX.readIsFloat());
+  EX_MEM.modifyIsDouble(ID_EX.readIsDouble());
+  EX_MEM.modifyIsCSR(ID_EX.readIsCSR());
+  EX_MEM.modifyRd(ID_EX.readRd());
+  EX_MEM.modifyFunct7(ID_EX.readFunct7());
+  EX_MEM.modifyRs1(ID_EX.readRs1());
+  EX_MEM.modifyRs2(ID_EX.readRs2());
+  EX_MEM.modifyRs3(ID_EX.readRs3());
 }
 
 void RVSSVM::ExecuteCsr() {
@@ -508,6 +549,9 @@ void RVSSVM::WriteMemory() {
   MEM_WB.modifyIsDouble(EX_MEM.readIsDouble());
   MEM_WB.modifyIsCSR(EX_MEM.readIsCSR());
   MEM_WB.modifyIsBranch(EX_MEM.readIsBranch());
+  MEM_WB.modifyFunct7(EX_MEM.readFunct7());
+  MEM_WB.modifyRs1(EX_MEM.readRs1());
+  MEM_WB.modifyRs3(EX_MEM.readRs3());
   uint64_t addr = 0;
   std::vector<uint8_t> old_bytes_vec;
   std::vector<uint8_t> new_bytes_vec;
@@ -570,10 +614,10 @@ void RVSSVM::WriteMemory() {
 }
 
 void RVSSVM::WriteMemoryFloat() {
-  uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
+  uint8_t rs2 = EX_MEM.readRs2();
 
-  if (control_unit_.GetMemRead()) { // FLW
-    memory_result_ = memory_controller_.ReadWord(execution_result_);
+  if (EX_MEM.MemRead()) { // FLW
+    memory_result_ = memory_controller_.ReadWord(EX_MEM.readExecutionResult());
   }
 
   // std::cout << "+++++ Memory result: " << memory_result_ << std::endl;
@@ -582,7 +626,7 @@ void RVSSVM::WriteMemoryFloat() {
   std::vector<uint8_t> old_bytes_vec;
   std::vector<uint8_t> new_bytes_vec;
 
-  if (control_unit_.GetMemWrite()) { // FSW
+  if (EX_MEM.MemWrite()) { // FSW
     addr = execution_result_;
     for (size_t i = 0; i < 4; ++i) {
       old_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
@@ -598,21 +642,39 @@ void RVSSVM::WriteMemoryFloat() {
   if (old_bytes_vec!=new_bytes_vec) {
     current_delta_.memory_changes.push_back({addr, old_bytes_vec, new_bytes_vec});
   }
+
+  MEM_WB.modifyMemoryResult(memory_result_);
+  MEM_WB.modifyExecutionResult(EX_MEM.readExecutionResult());
+  MEM_WB.modifyMemRead(EX_MEM.MemRead());
+  MEM_WB.modifyMemWrite(EX_MEM.MemWrite());
+  MEM_WB.modifyWriteBackSignal(EX_MEM.WriteBackSignal());
+  MEM_WB.modifyOpcode(EX_MEM.readOpcode());
+  MEM_WB.modifyRd(EX_MEM.readRd());
+  MEM_WB.modifyRs2(EX_MEM.readRs2());
+  MEM_WB.modifyFunct3(EX_MEM.readFunct3());
+  MEM_WB.modifyImmediate(EX_MEM.readImmediate());
+  MEM_WB.modifyIsFloat(EX_MEM.readIsFloat());
+  MEM_WB.modifyIsDouble(EX_MEM.readIsDouble());
+  MEM_WB.modifyIsCSR(EX_MEM.readIsCSR());
+  MEM_WB.modifyIsBranch(EX_MEM.readIsBranch());
+  MEM_WB.modifyFunct7(EX_MEM.readFunct7());
+  MEM_WB.modifyRs1(EX_MEM.readRs1());
+  MEM_WB.modifyRs3(EX_MEM.readRs3());
 }
 
 void RVSSVM::WriteMemoryDouble() {
-  uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
+  uint8_t rs2 = EX_MEM.readRs2();
 
-  if (control_unit_.GetMemRead()) {// FLD
-    memory_result_ = memory_controller_.ReadDoubleWord(execution_result_);
+  if (EX_MEM.MemRead()) {// FLD
+    memory_result_ = memory_controller_.ReadDoubleWord(EX_MEM.readExecutionResult());
   }
 
   uint64_t addr = 0;
   std::vector<uint8_t> old_bytes_vec;
   std::vector<uint8_t> new_bytes_vec;
 
-  if (control_unit_.GetMemWrite()) {// FSD
-    addr = execution_result_;
+  if (EX_MEM.MemWrite()) {// FSD
+    addr = EX_MEM.readExecutionResult();
     for (size_t i = 0; i < 8; ++i) {
       old_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
     }
@@ -625,6 +687,24 @@ void RVSSVM::WriteMemoryDouble() {
   if (old_bytes_vec!=new_bytes_vec) {
     current_delta_.memory_changes.push_back({addr, old_bytes_vec, new_bytes_vec});
   }
+
+  MEM_WB.modifyMemoryResult(memory_result_);
+  MEM_WB.modifyExecutionResult(EX_MEM.readExecutionResult());
+  MEM_WB.modifyMemRead(EX_MEM.MemRead());
+  MEM_WB.modifyMemWrite(EX_MEM.MemWrite());
+  MEM_WB.modifyWriteBackSignal(EX_MEM.WriteBackSignal());
+  MEM_WB.modifyOpcode(EX_MEM.readOpcode());
+  MEM_WB.modifyRd(EX_MEM.readRd());
+  MEM_WB.modifyRs2(EX_MEM.readRs2());
+  MEM_WB.modifyFunct3(EX_MEM.readFunct3());
+  MEM_WB.modifyImmediate(EX_MEM.readImmediate());
+  MEM_WB.modifyIsFloat(EX_MEM.readIsFloat());
+  MEM_WB.modifyIsDouble(EX_MEM.readIsDouble());
+  MEM_WB.modifyIsCSR(EX_MEM.readIsCSR());
+  MEM_WB.modifyIsBranch(EX_MEM.readIsBranch());
+  MEM_WB.modifyFunct7(EX_MEM.readFunct7());
+  MEM_WB.modifyRs1(EX_MEM.readRs1());
+  MEM_WB.modifyRs3(EX_MEM.readRs3());
 }
 
 void RVSSVM::WriteBack() {
@@ -698,16 +778,16 @@ void RVSSVM::WriteBack() {
 }
 
 void RVSSVM::WriteBackFloat() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
-  uint8_t rd = (current_instruction_ >> 7) & 0b11111;
+  uint8_t opcode = MEM_WB.readOpcode();
+  uint8_t funct7 = MEM_WB.readFunct7();
+  uint8_t rd = MEM_WB.readRd();
 
   uint64_t old_reg = 0;
   unsigned int reg_index = rd;
   unsigned int reg_type = 2; // 0 for GPR, 1 for CSR, 2 for FPR
   uint64_t new_reg = 0;
 
-  if (control_unit_.GetRegWrite()) {
+  if (MEM_WB.WriteBackSignal()) {
     switch(funct7) {
       // write to GPR
       case get_instr_encoding(Instruction::kfle_s).funct7: // f(eq|lt|le).s
@@ -715,8 +795,8 @@ void RVSSVM::WriteBackFloat() {
       case get_instr_encoding(Instruction::kfmv_x_w).funct7: // fmv.x.w , fclass.s
       {
         old_reg = registers_.ReadGpr(rd);
-        registers_.WriteGpr(rd, execution_result_);
-        new_reg = execution_result_;
+        registers_.WriteGpr(rd, MEM_WB.readExecutionResult());
+        new_reg = MEM_WB.readExecutionResult();
         reg_type = 0; // GPR
         break;
       }
@@ -726,16 +806,16 @@ void RVSSVM::WriteBackFloat() {
         switch (opcode) {
           case get_instr_encoding(Instruction::kflw).opcode: {
             old_reg = registers_.ReadFpr(rd);
-            registers_.WriteFpr(rd, memory_result_);
-            new_reg = memory_result_;
+            registers_.WriteFpr(rd, MEM_WB.readMemoryResult());
+            new_reg = MEM_WB.readMemoryResult();
             reg_type = 2; // FPR
             break;
           }
 
           default: {
             old_reg = registers_.ReadFpr(rd);
-            registers_.WriteFpr(rd, execution_result_);
-            new_reg = execution_result_;
+            registers_.WriteFpr(rd, MEM_WB.readExecutionResult());
+            new_reg = MEM_WB.readExecutionResult();
             reg_type = 2; // FPR
             break;
           }
@@ -773,35 +853,35 @@ void RVSSVM::WriteBackFloat() {
 }
 
 void RVSSVM::WriteBackDouble() {
-  uint8_t opcode = current_instruction_ & 0b1111111;
-  uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
-  uint8_t rd = (current_instruction_ >> 7) & 0b11111;
+  uint8_t opcode = MEM_WB.readOpcode();
+  uint8_t funct7 = MEM_WB.readFunct7();
+  uint8_t rd = MEM_WB.readRd();
 
   uint64_t old_reg = 0;
   unsigned int reg_index = rd;
   unsigned int reg_type = 2; // 0 for GPR, 1 for CSR, 2 for FPR
   uint64_t new_reg = 0;
 
-  if (control_unit_.GetRegWrite()) {
+  if (MEM_WB.WriteBackSignal()) {
     // write to GPR
     if (funct7==0b1010001
         || funct7==0b1100001
         || funct7==0b1110001) { // f(eq|lt|le).d, fcvt.(w|wu|l|lu).d
       old_reg = registers_.ReadGpr(rd);
-      registers_.WriteGpr(rd, execution_result_);
-      new_reg = execution_result_;
+      registers_.WriteGpr(rd, MEM_WB.readExecutionResult());
+      new_reg = MEM_WB.readExecutionResult();
       reg_type = 0; // GPR
     }
       // write to FPR
     else if (opcode==0b0000111) {
       old_reg = registers_.ReadFpr(rd);
-      registers_.WriteFpr(rd, memory_result_);
-      new_reg = memory_result_;
+      registers_.WriteFpr(rd, MEM_WB.readMemoryResult());
+      new_reg = MEM_WB.readMemoryResult();
       reg_type = 2; // FPR
     } else {
       old_reg = registers_.ReadFpr(rd);
-      registers_.WriteFpr(rd, execution_result_);
-      new_reg = execution_result_;
+      registers_.WriteFpr(rd, MEM_WB.readExecutionResult());
+      new_reg = MEM_WB.readExecutionResult();
       reg_type = 2; // FPR
     }
   }
@@ -810,6 +890,7 @@ void RVSSVM::WriteBackDouble() {
     current_delta_.register_changes.push_back({reg_index, reg_type, old_reg, new_reg});
   }
 
+  
   return;
 }
 
@@ -891,6 +972,7 @@ void RVSSVM::Run() {
   WriteBack();
 
   for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<std::endl;
+  for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<std::endl;
   if (program_counter_ >= program_size_) {
     std::cout << "VM_PROGRAM_END" << std::endl;
     output_status_ = "VM_PROGRAM_END";

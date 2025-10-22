@@ -2,7 +2,7 @@
 #include "vm/pipelineRegisters.h"
 #include "vm/rvss/pipelined_rvss_vm.h"
 
-pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3){
+pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd){
     this->instruction = instruction;
     this->readData1 = readData1;
     this->readData2 = readData2;
@@ -13,6 +13,12 @@ pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint6
     this->writeBack = writeBack;
     this->opcode = opcode;
     this->funct3 = funct3;
+    this->funct7 = funct7;
+    this->isFloat = isFloat;
+    this->isDouble = isDouble;
+    this->isCSR = isCSR;
+    this->isBranch = isBranch;
+    this->rd = rd;
 }
 
 void pipelineRegister::Reset(){
@@ -94,12 +100,24 @@ uint pipelineRegister::readIsDouble() const{
     return (this->isDouble);
 }
 
+uint8_t pipelineRegister::readRs1() const{
+    return (this->rs1);
+}
+
 uint8_t pipelineRegister::readRs2() const{
     return (this->rs2);
 }
 
+uint8_t pipelineRegister::readRs3() const{
+    return (this->rs3);
+}
+
 uint pipelineRegister::readIsCSR() const{
     return (this->isCSR);
+}
+
+uint8_t pipelineRegister::readFunct7() const{
+    return (this->funct7);
 }
 
 void pipelineRegister::fetchInstruction(uint32_t instruction) {
@@ -174,11 +192,23 @@ void pipelineRegister::modifyRd(uint8_t rd){
     this->rd = rd;
 }
 
+void pipelineRegister::modifyRs1(uint8_t rs1){
+    this->rs1 = rs1;
+}
+
+void pipelineRegister::modifyRs3(uint8_t rs3){
+    this->rs3 = rs3;
+}
+
 void pipelineRegister::modifyRs2(uint8_t rs2){
     this->rs2 = rs2;
 }
 
-pipelineRegister IF_ID(0,0,0,0,0,0,0,0,0,0);
-pipelineRegister ID_EX(0,0,0,0,0,0,0,0,0,0);
-pipelineRegister EX_MEM(0,0,0,0,0,0,0,0,0,0);
-pipelineRegister MEM_WB(0,0,0,0,0,0,0,0,0,0);
+void pipelineRegister::modifyFunct7(uint8_t funct7){
+    this->funct7 = funct7;
+}
+
+pipelineRegister IF_ID(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+pipelineRegister ID_EX(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+pipelineRegister EX_MEM(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+pipelineRegister MEM_WB(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);

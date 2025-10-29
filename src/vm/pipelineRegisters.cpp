@@ -1,6 +1,6 @@
 #include <bits/stdc++.h>
 #include "vm/pipelineRegisters.h"
-#include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
+#include "vm/rvss/pipelined_rvss_vm.h"
 
 pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd){
     this->instruction = instruction;

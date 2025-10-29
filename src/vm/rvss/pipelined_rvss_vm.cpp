@@ -954,7 +954,7 @@ void RVSSVM::Run() {
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
-        std::cout << "Program Counter: " << program_counter_ << std::endl;
+        // std::cout << "Program Counter: " << program_counter_ << std::endl;
     }
     WriteBack();
     WriteMemory();
@@ -969,9 +969,12 @@ void RVSSVM::Run() {
     WriteMemory();
 
     WriteBack();
-
-    for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<std::endl;
-    for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<std::endl;
+    cycle_s_+=4;
+    //for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<", ";
+    
+    for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<", ";
+    std::cout<<"\n";
+    std::cout<<"Total Cycles: "<<cycle_s_<<std::endl;
     if (program_counter_ >= program_size_) {
         std::cout << "VM_PROGRAM_END" << std::endl;
         output_status_ = "VM_PROGRAM_END";
@@ -1073,59 +1076,59 @@ void RVSSVM::Step() {
 }
 
 void RVSSVM::Undo() {
-  if (undo_stack_.empty()) {
-    std::cout << "VM_NO_MORE_UNDO" << std::endl;
-    output_status_ = "VM_NO_MORE_UNDO";
-    return;
-  }
-
-  StepDelta last = undo_stack_.top();
-  undo_stack_.pop();
-
-  // if (!history_.can_undo()) {
-  //     std::cout << "Nothing to undo.\n";
-  //     return;
-  // }
-
-  // StepDelta last = history_.undo();
-
-  for (const auto &change : last.register_changes) {
-    switch (change.reg_type) {
-      case 0: { // GPR
-        registers_.WriteGpr(change.reg_index, change.old_value);
-        break;
-      }
-      case 1: { // CSR
-        registers_.WriteCsr(change.reg_index, change.old_value);
-        break;
-      }
-      case 2: { // FPR
-        registers_.WriteFpr(change.reg_index, change.old_value);
-        break;
-      }
-      default:std::cerr << "Invalid register type: " << change.reg_type << std::endl;
-        break;
+    if (undo_stack_.empty()) {
+        std::cout << "VM_NO_MORE_UNDO" << std::endl;
+        output_status_ = "VM_NO_MORE_UNDO";
+        return;
     }
-  }
 
-  for (const auto &change : last.memory_changes) {
-    for (size_t i = 0; i < change.old_bytes_vec.size(); ++i) {
-      memory_controller_.WriteByte(change.address + i, change.old_bytes_vec[i]);
+    StepDelta last = undo_stack_.top();
+    undo_stack_.pop();
+
+    // if (!history_.can_undo()) {
+    //     std::cout << "Nothing to undo.\n";
+    //     return;
+    // }
+
+    // StepDelta last = history_.undo();
+
+    for (const auto &change : last.register_changes) {
+        switch (change.reg_type) {
+        case 0: { // GPR
+            registers_.WriteGpr(change.reg_index, change.old_value);
+            break;
+        }
+        case 1: { // CSR
+            registers_.WriteCsr(change.reg_index, change.old_value);
+            break;
+        }
+        case 2: { // FPR
+            registers_.WriteFpr(change.reg_index, change.old_value);
+            break;
+        }
+        default:std::cerr << "Invalid register type: " << change.reg_type << std::endl;
+            break;
+        }
     }
-  }
 
-  program_counter_ = last.old_pc;
-  instructions_retired_--;
-  cycle_s_--;
-  std::cout << "Program Counter: " << program_counter_ << std::endl;
+    for (const auto &change : last.memory_changes) {
+        for (size_t i = 0; i < change.old_bytes_vec.size(); ++i) {
+        memory_controller_.WriteByte(change.address + i, change.old_bytes_vec[i]);
+        }
+    }
 
-  redo_stack_.push(last);
+    program_counter_ = last.old_pc;
+    instructions_retired_--;
+    cycle_s_--;
+    std::cout << "Program Counter: " << program_counter_ << std::endl;
 
-  output_status_ = "VM_UNDO_COMPLETED";
-  std::cout << "VM_UNDO_COMPLETED" << std::endl;
+    redo_stack_.push(last);
 
-  DumpRegisters(globals::registers_dump_file_path, registers_);
-  DumpState(globals::vm_state_dump_file_path);
+    output_status_ = "VM_UNDO_COMPLETED";
+    std::cout << "VM_UNDO_COMPLETED" << std::endl;
+
+    DumpRegisters(globals::registers_dump_file_path, registers_);
+    DumpState(globals::vm_state_dump_file_path);
 }
 
 void RVSSVM::Redo() {

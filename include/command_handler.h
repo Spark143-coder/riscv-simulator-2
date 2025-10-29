@@ -6,7 +6,7 @@
 #ifndef COMMAND_HANDLER_H
 #define COMMAND_HANDLER_H
 
-#include "./vm/rvss/hazard_detection_pipelined_rvss_vm.h"
+#include "./vm/rvss/pipelined_rvss_vm.h"
 
 #include <vector>
 #include<string>

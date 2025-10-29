@@ -39,6 +39,15 @@ void initializeForwardControlSignals(){
     Branch = 0;
 }
 
+bool checkProcessOver(){
+    bool yes=true;
+    if(IF_ID.readInstruction()!=0)yes=false;
+    if(ID_EX.readOpcode()!=0)yes=false;
+    if(EX_MEM.readOpcode()!=0)yes=false;
+    if(MEM_WB.readOpcode()!=0)yes=false;
+    return yes;
+}
+
 void HazardDetectionUnit(){
     if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0 || EX_MEM.readIsFloat()||EX_MEM.readIsDouble()) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
     if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0 || EX_MEM.readIsFloat()||EX_MEM.readIsDouble()) && EX_MEM.readRd()==ID_EX.readRs2())ForwardB=10;
@@ -971,7 +980,7 @@ void RVSSVM::WriteBackCsr() {
 void RVSSVM::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
-
+    int totalCycles=0;
     while (!stop_requested_ && program_counter_ < program_size_) {
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
         initializeForwardControlSignals();
@@ -981,14 +990,17 @@ void RVSSVM::Run() {
             ID_EX.modifyWriteBackSignal(0);
             ID_EX.modifyMemRead(0);
             ID_EX.modifyMemWrite(0);
+            //std::cout<<"Branch instruction: "<<std::endl;
             UpdateProgramCounter(-8);
+            //std::cout<<"Updated program counter "<<program_counter_<<std::endl;
         }
+        //std::cout << "Hi Program Counter: " << program_counter_ << std::endl;
         WriteBack();
+        WriteMemory();
         if((ForwardA==1 || ForwardB==1 || ForwardC==1) && (ForwardA!=10) && (ForwardB!=10) && (ForwardC!=10)){
-            MEM_WB.modifyWriteBackSignal(0);
+            EX_MEM.modifyWriteBackSignal(0);
         }
         else{
-            WriteMemory();
             if(ForwardA==10 || ForwardB==10 || ForwardC==10){
                 EX_MEM.modifyWriteBackSignal(0);
             }
@@ -1001,10 +1013,10 @@ void RVSSVM::Run() {
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
-        // std::cout << "Program Counter: " << program_counter_ << std::endl;
+        totalCycles++;
     }
-    uint number = 4;
-    while(number > 0){
+    //std::cout<<"Final Hi Counter: "<<program_counter_<<std::endl;
+    while(!checkProcessOver()){
         initializeForwardControlSignals();
         HazardDetectionUnit();
         if(Branch){
@@ -1012,18 +1024,20 @@ void RVSSVM::Run() {
             ID_EX.modifyWriteBackSignal(0);
             ID_EX.modifyMemRead(0);
             ID_EX.modifyMemWrite(0);
+            //std::cout<<"Branch instruction: "<<std::endl;
             UpdateProgramCounter(-8);
+            //std::cout<<"Updated program counter "<<program_counter_<<std::endl;
         }
+        //std::cout << "Hello Program Counter: " << program_counter_ << std::endl;
         WriteBack();
+        WriteMemory();
         if((ForwardA==1 || ForwardB==1 || ForwardC==1) && (ForwardA!=10) && (ForwardB!=10) && (ForwardC!=10)){
-            MEM_WB.modifyWriteBackSignal(0);
-            number++;
+            EX_MEM.modifyWriteBackSignal(0);
         }
         else{
-            WriteMemory();
             if(ForwardA==10 || ForwardB==10 || ForwardC==10){
                 EX_MEM.modifyWriteBackSignal(0);
-                number++;
+
             }
             else{
                 Execute();
@@ -1031,11 +1045,16 @@ void RVSSVM::Run() {
                 Fetch();
             }
         }
-        number--;
+        totalCycles++;
+        if(checkProcessOver())break;
     }
 
-    for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<"\n";
-    //for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<std::endl;
+    //for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<", ";
+    //std::cout<<"\n";
+    
+    for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<", ";
+    std::cout<<"\n";
+    std::cout<<"Total Cycles Count: "<<totalCycles<<std::endl;
     if (program_counter_ >= program_size_) {
         std::cout << "VM_PROGRAM_END" << std::endl;
         output_status_ = "VM_PROGRAM_END";

@@ -83,12 +83,12 @@ void RVSSVM::Execute() {
 
 
     if (control_unit_.GetBranch()) {
-        if (opcode==get_instr_encoding(Instruction::kjalr).opcode || 
+        if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
             opcode==get_instr_encoding(Instruction::kjal).opcode) {
         next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
         UpdateProgramCounter(-4);
         return_address_ = program_counter_ + 4;
-        if (opcode==get_instr_encoding(Instruction::kjalr).opcode) { 
+        if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
             UpdateProgramCounter(-program_counter_ + (execution_result_));
         } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
             UpdateProgramCounter(imm);
@@ -307,8 +307,8 @@ void RVSSVM::HandleSyscall() {
             std::cout << "VM_STDIN_START" << std::endl;
             output_status_ = "VM_STDIN_START";
             std::unique_lock<std::mutex> lock(input_mutex_);
-            input_cv_.wait(lock, [this]() { 
-                return !input_queue_.empty(); 
+            input_cv_.wait(lock, [this]() {
+                return !input_queue_.empty();
             });
             output_status_ = "VM_STDIN_END";
             std::cout << "VM_STDIN_END" << std::endl;
@@ -572,7 +572,7 @@ void RVSSVM::WriteBack() {
     uint8_t rd = (current_instruction_ >> 7) & 0b11111;
     int32_t imm = ImmGenerator(current_instruction_);
 
-    if (opcode == get_instr_encoding(Instruction::kecall).opcode && 
+    if (opcode == get_instr_encoding(Instruction::kecall).opcode &&
         funct3 == get_instr_encoding(Instruction::kecall).funct3) { // ecall
         return;
     }
@@ -593,7 +593,7 @@ void RVSSVM::WriteBack() {
     unsigned int reg_type = 0; // 0 for GPR, 1 for CSR, 2 for FPR
 
 
-    if (control_unit_.GetRegWrite()) { 
+    if (control_unit_.GetRegWrite()) {
         switch (opcode) {
         case get_instr_encoding(Instruction::kRtype).opcode: /* R-Type */
         case get_instr_encoding(Instruction::kItype).opcode: /* I-Type */
@@ -601,7 +601,7 @@ void RVSSVM::WriteBack() {
             registers_.WriteGpr(rd, execution_result_);
             break;
         }
-        case get_instr_encoding(Instruction::kLoadType).opcode: /* Load */ { 
+        case get_instr_encoding(Instruction::kLoadType).opcode: /* Load */ {
             registers_.WriteGpr(rd, memory_result_);
             break;
         }

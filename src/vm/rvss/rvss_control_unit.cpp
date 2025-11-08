@@ -17,100 +17,100 @@ using instruction_set::get_instr_encoding;
 
 
 void RVSSControlUnit::SetControlSignals(uint32_t instruction) {
-  uint8_t opcode = instruction & 0b1111111;
+    uint8_t opcode = instruction & 0b1111111;
 
-  alu_src_ = mem_to_reg_ = reg_write_ = mem_read_ = mem_write_ = branch_ = false;
-  alu_op_ = false;
+    alu_src_ = mem_to_reg_ = reg_write_ = mem_read_ = mem_write_ = branch_ = false;
+    alu_op_ = false;
 
-  switch (opcode) {
-    case 0b0110011: /* R-type (kAdd, kSub, kAnd, kOr, kXor, kSll, kSrl, etc.) */ {
-      reg_write_ = true;
-      alu_op_ = true;
-      break;
-    }
-    case 0b0000011: 
-    
-    
-    {// Load instructions (LB, LH, LW, LD)
-      alu_src_ = true;
-      mem_to_reg_ = true;
-      reg_write_ = true;
-      mem_read_ = true;
-      break;
-    }
-    case 0b0100011: {// Store instructions (SB, SH, SW, SD)
-      alu_src_ = true;
-      alu_op_ = true;
-      mem_write_ = true;
-      break;
-    }
-    case 0b1100011: {// branch_ instructions (BEQ, BNE, BLT, BGE)
-      alu_op_ = true;
-      branch_ = true;
-      break;
-    }
-    case 0b0010011: {// I-type alu instructions (ADDI, ANDI, ORI, XORI, SLTI, SLLI, SRLI)
-      alu_src_ = true;
-      reg_write_ = true;
-      alu_op_ = true;
-      break;
-    }
-    case 0b0110111: {// LUI (Load Upper Immediate)
-      alu_src_ = true;
-      reg_write_ = true;
-      alu_op_ = true; // alu will add immediate to zero
-      break;
-    }
-    case 0b0010111: {// AUIPC (Add Upper Immediate to PC)
-      alu_src_ = true;
-      reg_write_ = true;
-      alu_op_ = true; // alu will add immediate to PC
-      break;
-    }
-    case 0b1101111: {// JAL (Jump and Link)
-      reg_write_ = true;
-      branch_ = true;
-      break;
-    }
-    case 0b1100111: {// JALR (Jump and Link Register)
-      alu_src_ = true;
-      reg_write_ = true;
-      branch_ = true;
-      break;
-    }
-    case 0b0000001: {// kMul
-      reg_write_ = true;
-      alu_op_ = true;
-      break;
-    }
-
-
-        // F extension + D extension
-    case 0b0000111: {// F-Type Load instructions (FLW, FLD)
-      alu_src_ = true;
-      mem_to_reg_ = true;
-      reg_write_ = true;
-      mem_read_ = true;
-      break;
-    }
-    case 0b0100111: {// F-Type Store instructions (FSW, FSD)
-      alu_src_ = true;
-      alu_op_ = true;
-      mem_write_ = true;
-      break;
-    }
-    case 0b1010011: {// F-Type R-type instructions (FADD, FSUB, FMUL, FDIV, etc.)
-      reg_write_ = true;
-      alu_op_ = true;
-      break;
-    }
+    switch (opcode) {
+        case 0b0110011: /* R-type (kAdd, kSub, kAnd, kOr, kXor, kSll, kSrl, etc.) */ {
+        reg_write_ = true;
+        alu_op_ = true;
+        break;
+        }
+        case 0b0000011: 
+        
+        
+        {// Load instructions (LB, LH, LW, LD)
+        alu_src_ = true;
+        mem_to_reg_ = true;
+        reg_write_ = true;
+        mem_read_ = true;
+        break;
+        }
+        case 0b0100011: {// Store instructions (SB, SH, SW, SD)
+        alu_src_ = true;
+        alu_op_ = true;
+        mem_write_ = true;
+        break;
+        }
+        case 0b1100011: {// branch_ instructions (BEQ, BNE, BLT, BGE)
+        alu_op_ = true;
+        branch_ = true;
+        break;
+        }
+        case 0b0010011: {// I-type alu instructions (ADDI, ANDI, ORI, XORI, SLTI, SLLI, SRLI)
+        alu_src_ = true;
+        reg_write_ = true;
+        alu_op_ = true;
+        break;
+        }
+        case 0b0110111: {// LUI (Load Upper Immediate)
+        alu_src_ = true;
+        reg_write_ = true;
+        alu_op_ = true; // alu will add immediate to zero
+        break;
+        }
+        case 0b0010111: {// AUIPC (Add Upper Immediate to PC)
+        alu_src_ = true;
+        reg_write_ = true;
+        alu_op_ = true; // alu will add immediate to PC
+        break;
+        }
+        case 0b1101111: {// JAL (Jump and Link)
+        reg_write_ = true;
+        branch_ = true;
+        break;
+        }
+        case 0b1100111: {// JALR (Jump and Link Register)
+        alu_src_ = true;
+        reg_write_ = true;
+        branch_ = true;
+        break;
+        }
+        case 0b0000001: {// kMul
+        reg_write_ = true;
+        alu_op_ = true;
+        break;
+        }
 
 
+            // F extension + D extension
+        case 0b0000111: {// F-Type Load instructions (FLW, FLD)
+        alu_src_ = true;
+        mem_to_reg_ = true;
+        reg_write_ = true;
+        mem_read_ = true;
+        break;
+        }
+        case 0b0100111: {// F-Type Store instructions (FSW, FSD)
+        alu_src_ = true;
+        alu_op_ = true;
+        mem_write_ = true;
+        break;
+        }
+        case 0b1010011: {// F-Type R-type instructions (FADD, FSUB, FMUL, FDIV, etc.)
+        reg_write_ = true;
+        alu_op_ = true;
+        break;
+        }
 
 
-    default:
-      break;
-  }
+
+
+        default:
+        break;
+    }
 
     
 }

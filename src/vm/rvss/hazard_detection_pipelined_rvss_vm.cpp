@@ -31,6 +31,8 @@ uint ForwardA;
 uint ForwardB;
 uint ForwardC;
 uint Branch;
+uint execResult;
+uint memResult;
 
 void initializeForwardControlSignals(){
     ForwardA = 0;
@@ -49,13 +51,75 @@ bool checkProcessOver(){
 }
 
 void HazardDetectionUnit(){
-    if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0 || EX_MEM.readIsFloat()||EX_MEM.readIsDouble()) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
-    if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0 || EX_MEM.readIsFloat()||EX_MEM.readIsDouble()) && EX_MEM.readRd()==ID_EX.readRs2())ForwardB=10;
-    if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0 || EX_MEM.readIsFloat()||EX_MEM.readIsDouble()) && (EX_MEM.readRd()==ID_EX.readRs3() && ((EX_MEM.readIsFloat() && ID_EX.readIsFloat()) || (EX_MEM.readIsDouble() && ID_EX.readIsDouble()))))ForwardC=10;
+    if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
+        if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+        if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+    }
 
-    if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0 || MEM_WB.readIsFloat() || MEM_WB.readIsDouble()) && ForwardA!=10 && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
-    if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0 || MEM_WB.readIsFloat() || MEM_WB.readIsDouble()) && ForwardB!=10 && MEM_WB.readRd()==ID_EX.readRs2())ForwardB=1;
-    if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0 || MEM_WB.readIsFloat() || MEM_WB.readIsDouble()) && ForwardC!=10 && (MEM_WB.readRd()==ID_EX.readRs3() && ((MEM_WB.readIsFloat() && ID_EX.readIsFloat())||(MEM_WB.readIsDouble() && MEM_WB.readIsDouble()))))ForwardC=1;
+    else if((EX_MEM.readIsDouble() || EX_MEM.readIsFloat()) && (ID_EX.readIsFloat() || ID_EX.readIsDouble())){
+        if(EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+            }
+        }
+        else{
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs3())ForwardC=10;
+            }
+            else{
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs3())ForwardC=10;
+            }
+        }
+    }
+    else if((!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat()) && (ID_EX.readIsDouble() || ID_EX.readIsFloat())){
+        if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+        }
+    }
+    else {
+        if(EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+        }
+    }
+
+    if(!MEM_WB.readIsDouble() && !MEM_WB.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
+        if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
+        if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal() && ForwardB!=10)ForwardB=1;
+    }
+    else if((MEM_WB.readIsDouble() || MEM_WB.readIsFloat()) && (ID_EX.readIsFloat() || ID_EX.readIsDouble())){
+
+        if(MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
+            }
+        }
+        else{
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3())ForwardC=1;
+            }
+            else{
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3())ForwardC=1;
+            }
+        }
+    }
+    else if((!MEM_WB.readIsDouble() && !MEM_WB.readIsFloat()) && (ID_EX.readIsDouble() || ID_EX.readIsFloat())){
+        if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
+        }
+    }
+    else{
+        if(MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs2() && ForwardB!=10 && !ID_EX.ExecuteSignal())ForwardB=1;
+        }
+    }
 
     if(EX_MEM.readIsBranch())Branch=1;
 }
@@ -994,7 +1058,7 @@ void RVSSVM::Run() {
             UpdateProgramCounter(-8);
             //std::cout<<"Updated program counter "<<program_counter_<<std::endl;
         }
-        //std::cout << "Hi Program Counter: " << program_counter_ << std::endl;
+        //std::cout << "Hi, Program Counter: " << program_counter_ << std::endl;
         WriteBack();
         WriteMemory();
         if((ForwardA==1 || ForwardB==1 || ForwardC==1) && (ForwardA!=10) && (ForwardB!=10) && (ForwardC!=10)){
@@ -1024,20 +1088,22 @@ void RVSSVM::Run() {
             ID_EX.modifyWriteBackSignal(0);
             ID_EX.modifyMemRead(0);
             ID_EX.modifyMemWrite(0);
-            //std::cout<<"Branch instruction: "<<std::endl;
             UpdateProgramCounter(-8);
             //std::cout<<"Updated program counter "<<program_counter_<<std::endl;
         }
-        //std::cout << "Hello Program Counter: " << program_counter_ << std::endl;
+        //std::cout<<"Hello, program counter: "<< program_counter_<<std::endl;
         WriteBack();
         WriteMemory();
         if((ForwardA==1 || ForwardB==1 || ForwardC==1) && (ForwardA!=10) && (ForwardB!=10) && (ForwardC!=10)){
             EX_MEM.modifyWriteBackSignal(0);
+            EX_MEM.modifyMemRead(0);
+            EX_MEM.modifyMemWrite(0);
         }
         else{
             if(ForwardA==10 || ForwardB==10 || ForwardC==10){
                 EX_MEM.modifyWriteBackSignal(0);
-
+                EX_MEM.modifyMemRead(0);
+                EX_MEM.modifyMemWrite(0);
             }
             else{
                 Execute();
@@ -1049,9 +1115,8 @@ void RVSSVM::Run() {
         if(checkProcessOver())break;
     }
 
-    //for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<", ";
-    //std::cout<<"\n";
-    
+    for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<", ";
+    std::cout<<"\n";
     for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<", ";
     std::cout<<"\n";
     std::cout<<"Total Cycles Count: "<<totalCycles<<std::endl;

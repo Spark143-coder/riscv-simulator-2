@@ -2,7 +2,7 @@
 #include "assembler/assembler.h"
 #include "utils.h"
 #include "globals.h"
-#include "vm/rvss/pipelined_rvss_vm.h"
+#include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
 #include "vm_runner.h"
 #include "command_handler.h"
 #include "config.h"

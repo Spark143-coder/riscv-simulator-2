@@ -27,21 +27,19 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
-uint ForwardA;
-uint ForwardB;
-uint ForwardC;
-uint Branch;
-uint execResult;
-uint memResult;
+static uint ForwardA;
+static uint ForwardB;
+static uint ForwardC;
+static uint Branch;
 
-void initializeForwardControlSignals(){
+static void initializeForwardControlSignals(){
     ForwardA = 0;
     ForwardB = 0;
     ForwardC = 0;
     Branch = 0;
 }
 
-bool checkProcessOver(){
+static bool checkProcessOver(){
     bool yes=true;
     if(IF_ID.readInstruction()!=0)yes=false;
     if(ID_EX.readOpcode()!=0)yes=false;
@@ -50,7 +48,7 @@ bool checkProcessOver(){
     return yes;
 }
 
-void HazardDetectionUnit(){
+static void HazardDetectionUnit(){
     if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
@@ -124,14 +122,14 @@ void HazardDetectionUnit(){
     if(EX_MEM.readIsBranch())Branch=1;
 }
 
-RVSSVM::RVSSVM() : VmBase() {
+RVSSVM_HAZARD::RVSSVM_HAZARD() : VmBase() {
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
 }
 
-RVSSVM::~RVSSVM() = default;
+RVSSVM_HAZARD::~RVSSVM_HAZARD() = default;
 
-void RVSSVM::Fetch() {
+void RVSSVM_HAZARD::Fetch() {
   // std::cout<<"Fetch"<<std::endl;
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
     // std::cout<<"Current Instruction: "<<current_instruction_<<std::endl;
@@ -139,7 +137,7 @@ void RVSSVM::Fetch() {
     UpdateProgramCounter(4);
 }
 
-void RVSSVM::Decode() {
+void RVSSVM_HAZARD::Decode() {
 
     // std::cout<<"Decode"<<std::endl;
     control_unit_.SetControlSignals(IF_ID.readInstruction());
@@ -179,7 +177,7 @@ void RVSSVM::Decode() {
     ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
 }
 
-void RVSSVM::Execute() {
+void RVSSVM_HAZARD::Execute() {
     
     // std::cout<<"Execute"<<std::endl;
     uint8_t opcode = ID_EX.readOpcode();
@@ -299,7 +297,7 @@ void RVSSVM::Execute() {
     EX_MEM.modifyExecutionResult(execution_result_);
 }
 
-void RVSSVM::ExecuteFloat() {
+void RVSSVM_HAZARD::ExecuteFloat() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -353,7 +351,7 @@ void RVSSVM::ExecuteFloat() {
     registers_.WriteCsr(0x003, fcsr_status);
 }
 
-void RVSSVM::ExecuteDouble() {
+void RVSSVM_HAZARD::ExecuteDouble() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -399,7 +397,7 @@ void RVSSVM::ExecuteDouble() {
     EX_MEM.modifyRs3(ID_EX.readRs3());
 }
 
-void RVSSVM::ExecuteCsr() {
+void RVSSVM_HAZARD::ExecuteCsr() {
     uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
     uint16_t csr = (current_instruction_ >> 20) & 0xFFF;
     uint64_t csr_val = registers_.ReadCsr(csr);
@@ -411,7 +409,7 @@ void RVSSVM::ExecuteCsr() {
 }
 
 // TODO: implement writeback for syscalls
-void RVSSVM::HandleSyscall() {
+void RVSSVM_HAZARD::HandleSyscall() {
     uint64_t syscall_number = registers_.ReadGpr(17);
     switch (syscall_number) {
         case SYSCALL_PRINT_INT: {
@@ -584,7 +582,7 @@ void RVSSVM::HandleSyscall() {
     }
 }
 
-void RVSSVM::WriteMemory() {
+void RVSSVM_HAZARD::WriteMemory() {
   // std::cout<<"Write Memory"<<std::endl;
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
@@ -713,7 +711,7 @@ void RVSSVM::WriteMemory() {
     }
 }
 
-void RVSSVM::WriteMemoryFloat() {
+void RVSSVM_HAZARD::WriteMemoryFloat() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) { // FLW
@@ -762,7 +760,7 @@ void RVSSVM::WriteMemoryFloat() {
     MEM_WB.modifyRs3(EX_MEM.readRs3());
     }
 
-    void RVSSVM::WriteMemoryDouble() {
+    void RVSSVM_HAZARD::WriteMemoryDouble() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) {// FLD
@@ -807,7 +805,7 @@ void RVSSVM::WriteMemoryFloat() {
     MEM_WB.modifyRs3(EX_MEM.readRs3());
     }
 
-    void RVSSVM::WriteBack() {
+    void RVSSVM_HAZARD::WriteBack() {
     // std::cout<<"Writeback"<<std::endl;
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
@@ -877,7 +875,7 @@ void RVSSVM::WriteMemoryFloat() {
 
 }
 
-void RVSSVM::WriteBackFloat() {
+void RVSSVM_HAZARD::WriteBackFloat() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -952,7 +950,7 @@ void RVSSVM::WriteBackFloat() {
     }
 }
 
-void RVSSVM::WriteBackDouble() {
+void RVSSVM_HAZARD::WriteBackDouble() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -994,7 +992,7 @@ void RVSSVM::WriteBackDouble() {
     return;
 }
 
-void RVSSVM::WriteBackCsr() {
+void RVSSVM_HAZARD::WriteBackCsr() {
     uint8_t rd = (current_instruction_ >> 7) & 0b11111;
     uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
 
@@ -1041,7 +1039,7 @@ void RVSSVM::WriteBackCsr() {
 
 }
 
-void RVSSVM::Run() {
+void RVSSVM_HAZARD::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
     int totalCycles=0;
@@ -1128,7 +1126,7 @@ void RVSSVM::Run() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::DebugRun() {
+void RVSSVM_HAZARD::DebugRun() {
     ClearStop();
     uint64_t instruction_executed = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
@@ -1180,7 +1178,7 @@ void RVSSVM::DebugRun() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::Step() {
+void RVSSVM_HAZARD::Step() {
     current_delta_.old_pc = program_counter_;
     if (program_counter_ < program_size_) {
         WriteBack();
@@ -1220,7 +1218,7 @@ void RVSSVM::Step() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::Undo() {
+void RVSSVM_HAZARD::Undo() {
     if (undo_stack_.empty()) {
         std::cout << "VM_NO_MORE_UNDO" << std::endl;
         output_status_ = "VM_NO_MORE_UNDO";
@@ -1276,7 +1274,7 @@ void RVSSVM::Undo() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::Redo() {
+void RVSSVM_HAZARD::Redo() {
     if (redo_stack_.empty()) {
         std::cout << "VM_NO_MORE_REDO" << std::endl;
         return;
@@ -1327,7 +1325,7 @@ void RVSSVM::Redo() {
 
 }
 
-void RVSSVM::Reset() {
+void RVSSVM_HAZARD::Reset() {
     program_counter_ = 0;
     instructions_retired_ = 0;
     cycle_s_ = 0;

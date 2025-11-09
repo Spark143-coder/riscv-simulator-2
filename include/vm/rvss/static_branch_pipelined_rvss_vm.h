@@ -3,8 +3,9 @@
  * @brief RVSS VM definition
  * @author Vishank Singh, https://github.com/VishankSingh
  */
-#ifndef RVSS_VM_H
-#define RVSS_VM_H
+#ifndef STATIC_RVSS_VM_H
+#define STATIC_RVSS_VM_H
+
 
 #include "vm/vm_base.h"
 #include "vm/rvss/common.h"
@@ -14,6 +15,7 @@
 #include <stack>
 #include <vector>
 #include <iostream>
+#include<string>
 #include <cstdint>
 
 // TODO: use a circular buffer instead of a stack for undo/redo
@@ -73,14 +75,10 @@
 // }
 // };
 
-
-
-
-class RVSSVM : public VmBase {
-    public:
+class RVSSVM_STATIC : public VmBase {
+public:
     RVSSControlUnit control_unit_;
     std::atomic<bool> stop_requested_ = false;
-
 
     std::stack<StepDelta> undo_stack_;
     std::stack<StepDelta> redo_stack_;
@@ -96,9 +94,9 @@ class RVSSVM : public VmBase {
     uint64_t return_address_{};
 
     bool branch_flag_ = false;
-    int64_t next_pc_{}; // for jal, jalr,
+  int64_t next_pc_{}; // for jal, jalr,
 
-    // CSR intermediate variables
+  // CSR intermediate variables
     uint16_t csr_target_address_{};
     uint64_t csr_old_value_{};
     uint64_t csr_write_val_{};
@@ -123,8 +121,8 @@ class RVSSVM : public VmBase {
     void WriteBackDouble();
     void WriteBackCsr();
 
-    RVSSVM();
-    ~RVSSVM();
+    RVSSVM_STATIC();
+    ~RVSSVM_STATIC();
 
     void Run() override;
     void DebugRun() override;
@@ -140,13 +138,13 @@ class RVSSVM : public VmBase {
     bool IsStopRequested() const {
         return stop_requested_;
     }
-
+    
     void ClearStop() {
         stop_requested_ = false;
     }
 
     void PrintType() {
-        std::cout << "rvssvm" << std::endl;
+    std::cout << "rvssvm" << std::endl;
     }
 };
 

@@ -6,7 +6,12 @@
 #ifndef COMMAND_HANDLER_H
 #define COMMAND_HANDLER_H
 
-#include "./vm/rvss/hazard_detection_pipelined_rvss_vm.h"
+#include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
+#include "vm/rvss/forwarding_pipelined_rvss_vm.h"
+#include "vm/rvss/hazard_detection_pipelined_rvss_vm_2.h"
+#include "vm/rvss/pipelined_rvss_vm.h"
+#include "vm/rvss/rvss_vm.h"
+#include "vm/rvss/static_branch_pipelined_rvss_vm.h"
 
 #include <vector>
 #include<string>
@@ -55,7 +60,7 @@ struct Command {
 
 Command ParseCommand(const std::string &input);
 
-void ExecuteCommand(const Command& command, RVSSVM& vm);
+void ExecuteCommand(const Command& command, VmBase* vm);
 
 } // namespace CommandParser
 

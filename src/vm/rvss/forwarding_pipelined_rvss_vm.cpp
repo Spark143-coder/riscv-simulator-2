@@ -27,27 +27,27 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
-RVSSVM::RVSSVM() : VmBase() {
+RVSSVM_FORWARD::RVSSVM_FORWARD() : VmBase() {
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
 }
 
-uint ForwardA;
-uint ForwardB;
-uint ForwardC;
-uint Branch;
-int64_t execResult1;
-int64_t execResult2;
-int64_t execResult3;
-int64_t memResult1;
-int64_t memResult2;
-int64_t memResult3;
-bool pickResult1;
-bool pickResult2;
-bool pickResult3;
-bool stall;
+static uint ForwardA;
+static uint ForwardB;
+static uint ForwardC;
+static uint Branch;
+static int64_t execResult1;
+static int64_t execResult2;
+static int64_t execResult3;
+static int64_t memResult1;
+static int64_t memResult2;
+static int64_t memResult3;
+static bool pickResult1;
+static bool pickResult2;
+static bool pickResult3;
+static bool stall;
 
-void initializeForwardControlSignals(){
+static void initializeForwardControlSignals(){
     ForwardA = 0;
     ForwardB = 0;
     ForwardC = 0;
@@ -64,7 +64,7 @@ void initializeForwardControlSignals(){
     pickResult3=true;
 }
 
-bool checkProcessOver(){
+static bool checkProcessOver(){
     bool yes=true;
     if(IF_ID.readInstruction()!=0)yes=false;
     if(ID_EX.readOpcode()!=0)yes=false;
@@ -77,7 +77,7 @@ bool checkProcessOver(){
 //         case get_instr_encoding(Instruction::kfcvt_w_s).funct7: // fcvt.(w|wu|l|lu).s
 //         case get_instr_encoding(Instruction::kfmv_x_w).funct7: // fmv.x.w , fclass.s
 
-void HazardDetectionUnit(){
+static void HazardDetectionUnit(){
 
     if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
@@ -152,7 +152,7 @@ void HazardDetectionUnit(){
     if(EX_MEM.readIsBranch())Branch=1;
 }
 
-void ForwardUnit(){
+static void ForwardUnit(){
     if(ForwardA==10){
         if(EX_MEM.MemRead())stall=true;
         else execResult1=EX_MEM.readExecutionResult();
@@ -179,15 +179,15 @@ void ForwardUnit(){
     }
 }
 
-RVSSVM::~RVSSVM() = default;
+RVSSVM_FORWARD::~RVSSVM_FORWARD() = default;
 
-void RVSSVM::Fetch() {
+void RVSSVM_FORWARD::Fetch() {
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
     IF_ID.fetchInstruction(current_instruction_);
     UpdateProgramCounter(4);
 }
 
-void RVSSVM::Decode() {
+void RVSSVM_FORWARD::Decode() {
     control_unit_.SetControlSignals(IF_ID.readInstruction());
     uint32_t currentInstruction = IF_ID.readInstruction();
     uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
@@ -221,7 +221,7 @@ void RVSSVM::Decode() {
     ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
 }
 
-void RVSSVM::Execute() {
+void RVSSVM_FORWARD::Execute() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
 
@@ -342,7 +342,7 @@ void RVSSVM::Execute() {
     EX_MEM.modifyExecutionResult(execution_result_);
 }
 
-void RVSSVM::ExecuteFloat() {
+void RVSSVM_FORWARD::ExecuteFloat() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -410,7 +410,7 @@ void RVSSVM::ExecuteFloat() {
     registers_.WriteCsr(0x003, fcsr_status);
 }
 
-void RVSSVM::ExecuteDouble() {
+void RVSSVM_FORWARD::ExecuteDouble() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -471,7 +471,7 @@ void RVSSVM::ExecuteDouble() {
     EX_MEM.modifyRs3(ID_EX.readRs3());
 }
 
-void RVSSVM::ExecuteCsr() {
+void RVSSVM_FORWARD::ExecuteCsr() {
     uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
     uint16_t csr = (current_instruction_ >> 20) & 0xFFF;
     uint64_t csr_val = registers_.ReadCsr(csr);
@@ -483,7 +483,7 @@ void RVSSVM::ExecuteCsr() {
 }
 
 // TODO: implement writeback for syscalls
-void RVSSVM::HandleSyscall() {
+void RVSSVM_FORWARD::HandleSyscall() {
     uint64_t syscall_number = registers_.ReadGpr(17);
     switch (syscall_number) {
         case SYSCALL_PRINT_INT: {
@@ -656,7 +656,7 @@ void RVSSVM::HandleSyscall() {
     }
 }
 
-void RVSSVM::WriteMemory() {
+void RVSSVM_FORWARD::WriteMemory() {
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
     uint8_t funct3 = EX_MEM.readFunct3();
@@ -784,7 +784,7 @@ void RVSSVM::WriteMemory() {
     }
 }
 
-void RVSSVM::WriteMemoryFloat() {
+void RVSSVM_FORWARD::WriteMemoryFloat() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) { // FLW
@@ -831,7 +831,7 @@ void RVSSVM::WriteMemoryFloat() {
     MEM_WB.modifyRs3(EX_MEM.readRs3());
 }
 
-void RVSSVM::WriteMemoryDouble() {
+void RVSSVM_FORWARD::WriteMemoryDouble() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) {// FLD
@@ -876,7 +876,7 @@ void RVSSVM::WriteMemoryDouble() {
     MEM_WB.modifyRs3(EX_MEM.readRs3());
 }
 
-void RVSSVM::WriteBack() {
+void RVSSVM_FORWARD::WriteBack() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
     uint8_t rd = MEM_WB.readRd();
@@ -945,7 +945,7 @@ void RVSSVM::WriteBack() {
 
 }
 
-void RVSSVM::WriteBackFloat() {
+void RVSSVM_FORWARD::WriteBackFloat() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -1020,7 +1020,7 @@ void RVSSVM::WriteBackFloat() {
     }
 }
 
-void RVSSVM::WriteBackDouble() {
+void RVSSVM_FORWARD::WriteBackDouble() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -1062,7 +1062,7 @@ void RVSSVM::WriteBackDouble() {
     return;
 }
 
-void RVSSVM::WriteBackCsr() {
+void RVSSVM_FORWARD::WriteBackCsr() {
     uint8_t rd = (current_instruction_ >> 7) & 0b11111;
     uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
 
@@ -1109,7 +1109,7 @@ void RVSSVM::WriteBackCsr() {
 
 }
 
-void RVSSVM::Run() {
+void RVSSVM_FORWARD::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
     int NumStalls = 0;
@@ -1189,7 +1189,7 @@ void RVSSVM::Run() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::DebugRun() {
+void RVSSVM_FORWARD::DebugRun() {
     ClearStop();
     uint64_t instruction_executed = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
@@ -1241,7 +1241,7 @@ void RVSSVM::DebugRun() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::Step() {
+void RVSSVM_FORWARD::Step() {
     current_delta_.old_pc = program_counter_;
     if (program_counter_ < program_size_) {
         WriteBack();
@@ -1281,7 +1281,7 @@ void RVSSVM::Step() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::Undo() {
+void RVSSVM_FORWARD::Undo() {
     if (undo_stack_.empty()) {
         std::cout << "VM_NO_MORE_UNDO" << std::endl;
         output_status_ = "VM_NO_MORE_UNDO";
@@ -1337,7 +1337,7 @@ void RVSSVM::Undo() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM::Redo() {
+void RVSSVM_FORWARD::Redo() {
     if (redo_stack_.empty()) {
         std::cout << "VM_NO_MORE_REDO" << std::endl;
         return;
@@ -1388,7 +1388,7 @@ void RVSSVM::Redo() {
 
 }
 
-void RVSSVM::Reset() {
+void RVSSVM_FORWARD::Reset() {
     program_counter_ = 0;
     instructions_retired_ = 0;
     cycle_s_ = 0;

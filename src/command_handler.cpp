@@ -100,7 +100,7 @@ Command ParseCommand(const std::string &input) {
   return Command(command_type, args);
 }
 
-void ExecuteCommand(const Command &command, RVSSVM& vm) {
+void ExecuteCommand(const Command &command, VmBase* vm) {
   (void)vm;
   (void)command;
 }

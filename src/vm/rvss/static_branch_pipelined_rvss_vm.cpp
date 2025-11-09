@@ -4,7 +4,7 @@
  * @author Vishank Singh, https://github.com/VishankSingh
  */
 
-#include "vm/rvss/pipelined_rvss_vm.h"
+#include "vm/rvss/forwarding_pipelined_rvss_vm.h"
 
 #include "utils.h"
 #include "globals.h"
@@ -27,26 +27,168 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
-RVSSVM_PIPE::RVSSVM_PIPE() : VmBase() {
+RVSSVM_STATIC::RVSSVM_STATIC() : VmBase() {
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
 }
 
-RVSSVM_PIPE::~RVSSVM_PIPE() = default;
+static uint ForwardA;
+static uint ForwardB;
+static uint ForwardC;
+static uint Branch;
+static int64_t execResult1;
+static int64_t execResult2;
+static int64_t execResult3;
+static int64_t memResult1;
+static int64_t memResult2;
+static int64_t memResult3;
+bool pickResult1;
+bool pickResult2;
+bool pickResult3;
+bool stall;
 
-void RVSSVM_PIPE::Fetch() {
-  // std::cout<<"Fetch"<<std::endl;
+static void initializeForwardControlSignals(){
+    ForwardA = 0;
+    ForwardB = 0;
+    ForwardC = 0;
+    Branch = 0;
+    execResult1 = 0;
+    execResult2 = 0;
+    execResult3 = 0;
+    memResult1 = 0;
+    memResult2 = 0;
+    memResult3 = 0;
+    stall = false;
+    pickResult1 = true;
+    pickResult2 = true;
+    pickResult3 = true;
+}
+
+static bool checkProcessOver(){
+    bool yes=true;
+    if(IF_ID.readInstruction()!=0)yes=false;
+    if(ID_EX.readOpcode()!=0)yes=false;
+    if(EX_MEM.readOpcode()!=0)yes=false;
+    if(MEM_WB.readOpcode()!=0)yes=false;
+    return yes;
+}
+
+// case get_instr_encoding(Instruction::kfle_s).funct7: // f(eq|lt|le).s
+//         case get_instr_encoding(Instruction::kfcvt_w_s).funct7: // fcvt.(w|wu|l|lu).s
+//         case get_instr_encoding(Instruction::kfmv_x_w).funct7: // fmv.x.w , fclass.s
+
+static void HazardDetectionUnit(){
+
+    if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
+        if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+        if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+    }
+
+    else if((EX_MEM.readIsDouble() || EX_MEM.readIsFloat()) && (ID_EX.readIsFloat() || ID_EX.readIsDouble())){
+        if(EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+            }
+        }
+        else{
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs3())ForwardC=10;
+            }
+            else{
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs3())ForwardC=10;
+            }
+        }
+    }
+    else if((!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat()) && (ID_EX.readIsDouble() || ID_EX.readIsFloat())){
+        if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+        }
+    }
+    else {
+        if(EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+        }
+    }
+
+    if(!MEM_WB.readIsDouble() && !MEM_WB.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
+        if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
+        if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal() && ForwardB!=10)ForwardB=1;
+    }
+    else if((MEM_WB.readIsDouble() || MEM_WB.readIsFloat()) && (ID_EX.readIsFloat() || ID_EX.readIsDouble())){
+
+        if(MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
+            }
+        }
+        else{
+            if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3())ForwardC=1;
+            }
+            else{
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3())ForwardC=1;
+            }
+        }
+    }
+    else if((!MEM_WB.readIsDouble() && !MEM_WB.readIsFloat()) && (ID_EX.readIsDouble() || ID_EX.readIsFloat())){
+        if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
+        }
+    }
+    else{
+        if(MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs2() && ForwardB!=10 && !ID_EX.ExecuteSignal())ForwardB=1;
+        }
+    }
+
+    if(EX_MEM.readIsBranch())Branch=1;
+}
+
+static void ForwardUnit(){
+    if(ForwardA==10){
+        if(EX_MEM.MemRead())stall=true;
+        else execResult1=EX_MEM.readExecutionResult();
+    }
+    if(ForwardA==1){
+        if(MEM_WB.MemRead()){memResult1=MEM_WB.readMemoryResult();pickResult1=false;}
+        else execResult1=MEM_WB.readExecutionResult();
+    }
+    if(ForwardB==10){
+        if(EX_MEM.MemRead())stall=true;
+        else execResult2=EX_MEM.readExecutionResult();
+    }
+    if(ForwardB==1){
+        if(MEM_WB.MemRead()){memResult2=MEM_WB.readMemoryResult();pickResult2=false;}
+        else execResult2=MEM_WB.readExecutionResult();
+    }
+    if(ForwardC==10){
+        if(MEM_WB.MemRead()){memResult3=MEM_WB.readMemoryResult();pickResult3=false;}
+        else execResult3=MEM_WB.readExecutionResult();
+    }
+    if(ForwardC==1){
+        if(MEM_WB.MemRead()){memResult3=MEM_WB.readMemoryResult();pickResult3=false;}
+        else execResult3=MEM_WB.readExecutionResult();
+    }
+}
+
+RVSSVM_STATIC::~RVSSVM_STATIC() = default;
+
+void RVSSVM_STATIC::Fetch() {
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
-    // std::cout<<"Current Instruction: "<<current_instruction_<<std::endl;
     IF_ID.fetchInstruction(current_instruction_);
     UpdateProgramCounter(4);
 }
 
-void RVSSVM_PIPE::Decode() {
-
-    // std::cout<<"Decode"<<std::endl;
+void RVSSVM_STATIC::Decode() {
     control_unit_.SetControlSignals(IF_ID.readInstruction());
-    // std::cout<<"Current Instruction: "<<IF_ID.readInstruction()<<std::endl;
     uint32_t currentInstruction = IF_ID.readInstruction();
     uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
     uint8_t rs2 = (currentInstruction >> 20) & 0b11111;
@@ -57,9 +199,6 @@ void RVSSVM_PIPE::Decode() {
     uint64_t reg1_value = registers_.ReadGpr(rs1);
     uint64_t reg2_value = registers_.ReadGpr(rs2);
     alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
-    
-    //std::cout<<"imm: "<<imm<<std::endl;
-    // std::cout<<"rs1: "<<reg1_value<<std::endl;
 
     ID_EX.modifyReadData1(reg1_value);
     ID_EX.modifyReadData2(reg2_value);
@@ -82,9 +221,7 @@ void RVSSVM_PIPE::Decode() {
     ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
 }
 
-void RVSSVM_PIPE::Execute() {
-
-    // std::cout<<"Execute"<<std::endl;
+void RVSSVM_STATIC::Execute() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
 
@@ -107,18 +244,25 @@ void RVSSVM_PIPE::Execute() {
     uint64_t reg1_value = ID_EX.ReadData1();
     uint64_t reg2_value = ID_EX.ReadData2();
     int32_t imm = ID_EX.readImmediate();
+
+    if(ForwardA==10 || ForwardA==1){
+        if(pickResult1)reg1_value=execResult1;
+        else reg1_value=memResult1;
+    }
+
+    if(ForwardB==10 || ForwardB==1){
+        if(pickResult2)reg2_value=execResult2;
+        else reg2_value=memResult2;
+    }
+
     bool overflow = false;
 
     if (ID_EX.ExecuteSignal()) {
         reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
     }
 
-    // std::cout<<"rs2: "<<reg2_value<<std::endl;
-
     alu::AluOp aluOperation = ID_EX.readAluOp();
     std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
-
-    // std::cout<<"result: "<<execution_result_<<std::endl;
     EX_MEM.modifyExecutionResult(execution_result_);
     EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
     EX_MEM.modifyMemRead(ID_EX.MemRead());
@@ -198,7 +342,7 @@ void RVSSVM_PIPE::Execute() {
     EX_MEM.modifyExecutionResult(execution_result_);
 }
 
-void RVSSVM_PIPE::ExecuteFloat() {
+void RVSSVM_STATIC::ExecuteFloat() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -223,14 +367,28 @@ void RVSSVM_PIPE::ExecuteFloat() {
         reg1_value = registers_.ReadGpr(rs1);
     }
 
+    if(ForwardA==10 || ForwardA==1){
+        if(pickResult1)reg1_value=execResult1;
+        else reg1_value=memResult1;
+    }
+
+    if(ForwardB==10 || ForwardB==1){
+        if(pickResult2)reg2_value=execResult2;
+        else reg2_value=memResult2;
+        std::cout<<reg2_value<<std::endl;
+    }
+
+    if(ForwardC==10 || ForwardC==1){
+        if(pickResult3)reg3_value=execResult3;
+        else reg3_value=memResult3;
+    }
+
     if (ID_EX.ExecuteSignal()) {
         reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
     }
 
     alu::AluOp aluOperation = ID_EX.readAluOp();
     std::tie(execution_result_, fcsr_status) = alu::Alu::fpexecute(aluOperation, reg1_value, reg2_value, reg3_value, rm);
-
-    // std::cout << "+++++ Float execution result: " << execution_result_ << std::endl;
 
     EX_MEM.modifyExecutionResult(execution_result_);
     EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
@@ -252,7 +410,7 @@ void RVSSVM_PIPE::ExecuteFloat() {
     registers_.WriteCsr(0x003, fcsr_status);
 }
 
-void RVSSVM_PIPE::ExecuteDouble() {
+void RVSSVM_STATIC::ExecuteDouble() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -271,6 +429,21 @@ void RVSSVM_PIPE::ExecuteDouble() {
 
     if (funct7==0b1101001 || funct7==0b1111001 || opcode==0b0000111 || opcode==0b0100111) {
         reg1_value = registers_.ReadGpr(rs1);
+    }
+
+    if(ForwardA==10 || ForwardA==1){
+        if(pickResult1)reg1_value=execResult1;
+        else reg1_value=memResult1;
+    }
+
+    if(ForwardB==10 || ForwardB==1){
+        if(pickResult2)reg2_value=execResult2;
+        else reg2_value=memResult2;
+    }
+
+    if(ForwardC==10 || ForwardC==1){
+        if(pickResult3)reg3_value=execResult3;
+        else reg3_value=memResult3;
     }
 
     if (ID_EX.ExecuteSignal()) {
@@ -298,7 +471,7 @@ void RVSSVM_PIPE::ExecuteDouble() {
     EX_MEM.modifyRs3(ID_EX.readRs3());
 }
 
-void RVSSVM_PIPE::ExecuteCsr() {
+void RVSSVM_STATIC::ExecuteCsr() {
     uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
     uint16_t csr = (current_instruction_ >> 20) & 0xFFF;
     uint64_t csr_val = registers_.ReadCsr(csr);
@@ -310,7 +483,7 @@ void RVSSVM_PIPE::ExecuteCsr() {
 }
 
 // TODO: implement writeback for syscalls
-void RVSSVM_PIPE::HandleSyscall() {
+void RVSSVM_STATIC::HandleSyscall() {
     uint64_t syscall_number = registers_.ReadGpr(17);
     switch (syscall_number) {
         case SYSCALL_PRINT_INT: {
@@ -483,8 +656,7 @@ void RVSSVM_PIPE::HandleSyscall() {
     }
 }
 
-void RVSSVM_PIPE::WriteMemory() {
-    // std::cout<<"Write Memory"<<std::endl;
+void RVSSVM_STATIC::WriteMemory() {
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
     uint8_t funct3 = EX_MEM.readFunct3();
@@ -612,14 +784,12 @@ void RVSSVM_PIPE::WriteMemory() {
     }
 }
 
-void RVSSVM_PIPE::WriteMemoryFloat() {
+void RVSSVM_STATIC::WriteMemoryFloat() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) { // FLW
         memory_result_ = memory_controller_.ReadWord(EX_MEM.readExecutionResult());
     }
-
-    // std::cout << "+++++ Memory result: " << memory_result_ << std::endl;
 
     uint64_t addr = 0;
     std::vector<uint8_t> old_bytes_vec;
@@ -661,7 +831,7 @@ void RVSSVM_PIPE::WriteMemoryFloat() {
     MEM_WB.modifyRs3(EX_MEM.readRs3());
 }
 
-void RVSSVM_PIPE::WriteMemoryDouble() {
+void RVSSVM_STATIC::WriteMemoryDouble() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) {// FLD
@@ -706,8 +876,7 @@ void RVSSVM_PIPE::WriteMemoryDouble() {
     MEM_WB.modifyRs3(EX_MEM.readRs3());
 }
 
-void RVSSVM_PIPE::WriteBack() {
-    // std::cout<<"Writeback"<<std::endl;
+void RVSSVM_STATIC::WriteBack() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
     uint8_t rd = MEM_WB.readRd();
@@ -776,7 +945,7 @@ void RVSSVM_PIPE::WriteBack() {
 
 }
 
-void RVSSVM_PIPE::WriteBackFloat() {
+void RVSSVM_STATIC::WriteBackFloat() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -851,7 +1020,7 @@ void RVSSVM_PIPE::WriteBackFloat() {
     }
 }
 
-void RVSSVM_PIPE::WriteBackDouble() {
+void RVSSVM_STATIC::WriteBackDouble() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -893,7 +1062,7 @@ void RVSSVM_PIPE::WriteBackDouble() {
     return;
 }
 
-void RVSSVM_PIPE::WriteBackCsr() {
+void RVSSVM_STATIC::WriteBackCsr() {
     uint8_t rd = (current_instruction_ >> 7) & 0b11111;
     uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
 
@@ -940,41 +1109,78 @@ void RVSSVM_PIPE::WriteBackCsr() {
 
 }
 
-void RVSSVM_PIPE::Run() {
+void RVSSVM_STATIC::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
-
+    int NumStalls = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
+        initializeForwardControlSignals();
+        HazardDetectionUnit();
+        ForwardUnit();
+        if(Branch){
+            IF_ID.fetchInstruction(0);
+            ID_EX.modifyWriteBackSignal(0);
+            ID_EX.modifyMemRead(0);
+            ID_EX.modifyMemWrite(0);
+            UpdateProgramCounter(-8);
+            NumStalls+=2;
+        }
+        //std::cout << "Program Counter: " << program_counter_ << std::endl;
         WriteBack();
         WriteMemory();
-        Execute();
-        Decode();
-        Fetch();
+        if(!stall){
+            Execute();
+            Decode();
+            Fetch();
+        }
+        else{
+            NumStalls++;
+            EX_MEM.modifyWriteBackSignal(0);
+            EX_MEM.modifyMemRead(0);
+            EX_MEM.modifyMemWrite(0);
+        }
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
         // std::cout << "Program Counter: " << program_counter_ << std::endl;
     }
-    WriteBack();
-    WriteMemory();
-    Execute();
-    Decode();
-
-    WriteBack();
-    WriteMemory();
-    Execute();
-
-    WriteBack();
-    WriteMemory();
-
-    WriteBack();
-    cycle_s_+=4;
-    for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<", ";
+    while(!checkProcessOver()){
+        initializeForwardControlSignals();
+        HazardDetectionUnit();
+        ForwardUnit();
+        if(Branch){
+            IF_ID.fetchInstruction(0);
+            ID_EX.modifyWriteBackSignal(0);
+            ID_EX.modifyMemRead(0);
+            ID_EX.modifyMemWrite(0);
+            UpdateProgramCounter(-8);
+            NumStalls+=2;
+        }
+        //std::cout << "Program Counter: " << program_counter_ << std::endl;
+        WriteBack();
+        WriteMemory();
+        if(!stall){
+            Execute();
+            Decode();
+            Fetch();
+        }
+        else{
+            NumStalls++;
+            EX_MEM.modifyWriteBackSignal(0);
+            EX_MEM.modifyMemRead(0);
+            EX_MEM.modifyMemWrite(0);
+        }
+        instructions_retired_++;
+        instruction_executed++;
+        cycle_s_++;
+    }
+    for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<" ";
     std::cout<<"\n\n";
     for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<", ";
     std::cout<<"\n";
     std::cout<<"Total Cycles: "<<cycle_s_<<std::endl;
+    std::cout<<"Stalls required: "<<NumStalls<<std::endl;
     if (program_counter_ >= program_size_) {
         std::cout << "VM_PROGRAM_END" << std::endl;
         output_status_ = "VM_PROGRAM_END";
@@ -983,7 +1189,7 @@ void RVSSVM_PIPE::Run() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_PIPE::DebugRun() {
+void RVSSVM_STATIC::DebugRun() {
     ClearStop();
     uint64_t instruction_executed = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
@@ -1035,7 +1241,7 @@ void RVSSVM_PIPE::DebugRun() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_PIPE::Step() {
+void RVSSVM_STATIC::Step() {
     current_delta_.old_pc = program_counter_;
     if (program_counter_ < program_size_) {
         WriteBack();
@@ -1075,7 +1281,7 @@ void RVSSVM_PIPE::Step() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_PIPE::Undo() {
+void RVSSVM_STATIC::Undo() {
     if (undo_stack_.empty()) {
         std::cout << "VM_NO_MORE_UNDO" << std::endl;
         output_status_ = "VM_NO_MORE_UNDO";
@@ -1131,7 +1337,7 @@ void RVSSVM_PIPE::Undo() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_PIPE::Redo() {
+void RVSSVM_STATIC::Redo() {
     if (redo_stack_.empty()) {
         std::cout << "VM_NO_MORE_REDO" << std::endl;
         return;
@@ -1182,7 +1388,7 @@ void RVSSVM_PIPE::Redo() {
 
 }
 
-void RVSSVM_PIPE::Reset() {
+void RVSSVM_STATIC::Reset() {
     program_counter_ = 0;
     instructions_retired_ = 0;
     cycle_s_ = 0;
@@ -1206,7 +1412,3 @@ void RVSSVM_PIPE::Reset() {
     undo_stack_ = std::stack<StepDelta>();
     redo_stack_ = std::stack<StepDelta>();
 }
-
-
-
-

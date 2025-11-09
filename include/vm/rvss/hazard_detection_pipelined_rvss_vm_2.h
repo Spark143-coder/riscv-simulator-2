@@ -3,11 +3,12 @@
  * @brief RVSS VM definition
  * @author Vishank Singh, https://github.com/VishankSingh
  */
-#ifndef RVSS_VM_H
-#define RVSS_VM_H
+#ifndef HAZARD_2_RVSS_VM_H
+#define HAZARD_2_RVSS_VM_H
 
 
 #include "vm/vm_base.h"
+#include "vm/rvss/common.h"
 
 #include "rvss_control_unit.h"
 
@@ -19,25 +20,6 @@
 
 // TODO: use a circular buffer instead of a stack for undo/redo
 
-struct RegisterChange {
-    unsigned int reg_index;
-    unsigned int reg_type; // 0 for GPR, 1 for CSR, 2 for FPR
-    uint64_t old_value;
-    uint64_t new_value;
-};
-
-struct MemoryChange {
-    uint64_t address;
-    std::vector<uint8_t> old_bytes_vec;
-    std::vector<uint8_t> new_bytes_vec;
-};
-
-struct StepDelta {
-    uint64_t old_pc;
-    uint64_t new_pc;
-    std::vector<RegisterChange> register_changes;
-    std::vector<MemoryChange> memory_changes;
-};
 
 
 // class RingUndoRedo {
@@ -94,10 +76,7 @@ struct StepDelta {
 // }
 // };
 
-
-
-
-class RVSSVM : public VmBase {
+class RVSSVM_HAZARD_2 : public VmBase {
 public:
     RVSSControlUnit control_unit_;
     std::atomic<bool> stop_requested_ = false;
@@ -144,8 +123,8 @@ public:
     void WriteBackDouble();
     void WriteBackCsr();
 
-    RVSSVM();
-    ~RVSSVM();
+    RVSSVM_HAZARD_2();
+    ~RVSSVM_HAZARD_2();
 
     void Run() override;
     void DebugRun() override;
@@ -154,7 +133,7 @@ public:
     void Redo() override;
     void Reset() override;
 
-    void RequestStop() {
+    void RequestStop() override {
         stop_requested_ = true;
     }
 

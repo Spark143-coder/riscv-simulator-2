@@ -1,10 +1,8 @@
+#ifndef VM_PIPELINEREGISTERS_H
+#define VM_PIPELINEREGISTERS_H
+
 #include<bits/stdc++.h>
-#include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
-#include "vm/rvss/forwarding_pipelined_rvss_vm.h"
-#include "vm/rvss/hazard_detection_pipelined_rvss_vm_2.h"
-#include "vm/rvss/pipelined_rvss_vm.h"
-#include "vm/rvss/rvss_vm.h"
-#include "vm/rvss/static_branch_pipelined_rvss_vm.h"
+#include "vm/rvss/rvss_control_unit.h"
 
 class pipelineRegister{
     private:
@@ -31,6 +29,7 @@ class pipelineRegister{
         uint8_t rs3;
         uint8_t funct7;
     public:
+        pipelineRegister();
         pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd);
         void Reset();
         uint32_t readInstruction() const;
@@ -85,3 +84,4 @@ extern pipelineRegister ID_EX;
 extern pipelineRegister EX_MEM;
 extern pipelineRegister MEM_WB;
 
+#endif

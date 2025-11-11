@@ -6,7 +6,6 @@
 #ifndef FORWARD_RVSS_VM_H
 #define FORWARD_RVSS_VM_H
 
-
 #include "vm/vm_base.h"
 #include "vm/rvss/common.h"
 

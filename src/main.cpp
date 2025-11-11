@@ -85,7 +85,7 @@ int main(int argc, char *argv[]) {
                 vm = new RVSSVM_STATIC();break;
               }
               else{
-                std::cout<<"Not a mode configuration\nEnter the correct mode";
+                std::cout<<"Not a mode configuration\nEnter the correct mode\n";
               }
             }
             vm->LoadProgram(program);
@@ -161,7 +161,33 @@ int main(int argc, char *argv[]) {
 
   std::cout << "VM_STARTED" << std::endl;
   // std::cout << globals::invokation_path << std::endl;
-
+  std::cout<<"Enter the configuration of the RISC-V Processor\n";
+  std::cout<<"1: Single cycle processor\n";
+  std::cout<<"2: Pipelined processor without hazard detection\n";
+  std::cout<<"3: Pipelined processor with hazard detection but no forwarding\n";
+  std::cout<<"4: Pipelined processor with hazard detection and forwarding\n";
+  std::cout<<"5: Pipelined processor with static branch prediction\n";
+  while(1){
+    std::cin>>mode;
+    if(mode==1){
+      vm = new RVSSVM();break;
+    }
+    else if(mode==2){
+      vm = new RVSSVM_PIPE();break;
+    }
+    else if(mode==3){
+      vm = new RVSSVM_HAZARD();break;
+    }
+    else if(mode==4){
+      vm = new RVSSVM_FORWARD();break;
+    }
+    else if(mode==5){
+      vm = new RVSSVM_STATIC();break;
+    }
+    else{
+      std::cout<<"Not a mode configuration\nEnter the correct mode\n";
+    }
+  }
   std::thread vm_thread;
   bool vm_running = false;
 

@@ -7,6 +7,30 @@
 #include "vm/rvss/rvss_vm.h"
 #include "vm/rvss/static_branch_pipelined_rvss_vm.h"
 
+pipelineRegister::pipelineRegister(){
+    this-> instruction = 0;
+    this-> readData1 = 0;
+    this-> readData2 = 0;
+    this-> rd = 0;
+    this-> immediate = 0;
+    this-> executeSignal = 0;
+    this-> memRead = 0;
+    this-> memWrite = 0;
+    this-> writeBack = 0;
+    this-> isBranch = 0;
+    this-> opcode = 0;
+    this-> funct3 = 0;
+    this-> executionResult = 0;
+    this-> memoryResult = 0;
+    this-> isFloat = 0;
+    this-> isDouble = 0;
+    this-> isCSR = 0;
+    this-> rs1 = 0;
+    this-> rs2 = 0;
+    this-> rs3 = 0;
+    this-> funct7 = 0;
+}
+
 pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd){
     this->instruction = instruction;
     this->readData1 = readData1;

@@ -4,7 +4,7 @@
  * @author Vishank Singh, https://github.com/VishankSingh
  */
 
-#include "vm/rvss/forwarding_pipelined_rvss_vm.h"
+#include "vm/rvss/static_branch_pipelined_rvss_vm.h"
 
 #include "utils.h"
 #include "globals.h"
@@ -46,6 +46,7 @@ bool pickResult1;
 bool pickResult2;
 bool pickResult3;
 bool stall;
+static int NumStalls = 0;
 
 static void initializeForwardControlSignals(){
     ForwardA = 0;
@@ -1112,7 +1113,6 @@ void RVSSVM_STATIC::WriteBackCsr() {
 void RVSSVM_STATIC::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
-    int NumStalls = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
         initializeForwardControlSignals();
@@ -1175,10 +1175,22 @@ void RVSSVM_STATIC::Run() {
         instruction_executed++;
         cycle_s_++;
     }
-    for(int i=0;i<32;i++)std::cout<<"register "<<i<<" : "<<static_cast<int64_t>(registers_.ReadGpr(i))<<" ";
-    std::cout<<"\n\n";
-    for(int i=0;i<32;i++)std::cout<<"register "<<i<<": "<<(registers_.ReadFpr(i) & 0xFFFFFFFF)<<", ";
-    std::cout<<"\n";
+    std::cout << "General Purpose registers \n";
+    for (int i = 0; i < 32; i++) {
+        std::cout << "r" << i << ": "
+                << static_cast<int64_t>(registers_.ReadGpr(i)) << "  ";
+        if ((i + 1) % 8 == 0) {
+            std::cout << "\n";
+        }
+    }
+    std::cout << "\nFloating point registers \n";
+    for (int i = 0; i < 32; i++) {
+        std::cout << "f" << i << ": "
+                << (registers_.ReadFpr(i) & 0xFFFFFFFF) << "  ";
+        if ((i + 1) % 8 == 0) {
+            std::cout << "\n";
+        }
+    }
     std::cout<<"Total Cycles: "<<cycle_s_<<std::endl;
     std::cout<<"Stalls required: "<<NumStalls<<std::endl;
     if (program_counter_ >= program_size_) {
@@ -1243,17 +1255,61 @@ void RVSSVM_STATIC::DebugRun() {
 
 void RVSSVM_STATIC::Step() {
     current_delta_.old_pc = program_counter_;
-    if (program_counter_ < program_size_) {
+    current_delta_.pipeLineSnapShot.old_IF_ID = IF_ID;
+    current_delta_.pipeLineSnapShot.old_ID_EX = ID_EX;
+    current_delta_.pipeLineSnapShot.old_EX_MEM = EX_MEM;
+    current_delta_.pipeLineSnapShot.old_MEM_WB = MEM_WB;
+    current_delta_.NumStalls.oldStalls = NumStalls;
+    if (!checkProcessOver() || (program_size_ > 0 && program_counter_ == 0)) {
+        initializeForwardControlSignals();
+        HazardDetectionUnit();
+        ForwardUnit();
+        if(Branch){
+            IF_ID.fetchInstruction(0);
+            ID_EX.modifyWriteBackSignal(0);
+            ID_EX.modifyMemRead(0);
+            ID_EX.modifyMemWrite(0);
+            UpdateProgramCounter(-8);
+            NumStalls+=2;
+        }
         WriteBack();
         WriteMemory();
-        Execute();
-        Decode();
-        Fetch();
+        if(!stall){
+            Execute();
+            Decode();
+            Fetch();
+        }
+        else{
+            NumStalls++;
+            EX_MEM.modifyWriteBackSignal(0);
+            EX_MEM.modifyMemRead(0);
+            EX_MEM.modifyMemWrite(0);
+        }
         instructions_retired_++;
         cycle_s_++;
-        std::cout << "Program Counter: " << std::hex << program_counter_ << std::dec << std::endl;
-
         current_delta_.new_pc = program_counter_;
+        current_delta_.pipeLineSnapShot.new_IF_ID = IF_ID;
+        current_delta_.pipeLineSnapShot.new_ID_EX = ID_EX;
+        current_delta_.pipeLineSnapShot.new_EX_MEM = EX_MEM;
+        current_delta_.pipeLineSnapShot.new_MEM_WB = MEM_WB;
+        current_delta_.NumStalls.newStalls = NumStalls;
+
+        std::cout << "General Purpose registers \n";
+        for (int i = 0; i < 32; i++) {
+            std::cout << "r" << i << ": "
+                    << static_cast<int64_t>(registers_.ReadGpr(i)) << "  ";
+            if ((i + 1) % 8 == 0) {
+                std::cout << "\n";
+            }
+        }
+        std::cout << "\nFloating point registers \n";
+        for (int i = 0; i < 32; i++) {
+            std::cout << "f" << i << ": "
+                    << (registers_.ReadFpr(i) & 0xFFFFFFFF) << "  ";
+            if ((i + 1) % 8 == 0) {
+                std::cout << "\n";
+            }
+        }
 
         // history_.push(current_delta_);
 
@@ -1265,15 +1321,15 @@ void RVSSVM_STATIC::Step() {
         current_delta_ = StepDelta();
 
 
-        if (program_counter_ < program_size_) {
+        if (!checkProcessOver()) {
         std::cout << "VM_STEP_COMPLETED" << std::endl;
         output_status_ = "VM_STEP_COMPLETED";
-        } else if (program_counter_ >= program_size_) {
+        } else if (checkProcessOver()) {
         std::cout << "VM_LAST_INSTRUCTION_STEPPED" << std::endl;
         output_status_ = "VM_LAST_INSTRUCTION_STEPPED";
         }
 
-    } else if (program_counter_ >= program_size_) {
+    } else if (checkProcessOver()) {
         std::cout << "VM_PROGRAM_END" << std::endl;
         output_status_ = "VM_PROGRAM_END";
     }
@@ -1324,9 +1380,30 @@ void RVSSVM_STATIC::Undo() {
     }
 
     program_counter_ = last.old_pc;
+    program_counter_ = last.old_pc;
+    IF_ID = last.pipeLineSnapShot.old_IF_ID;
+    ID_EX = last.pipeLineSnapShot.old_ID_EX;
+    EX_MEM =  last.pipeLineSnapShot.old_EX_MEM;
+    MEM_WB = last.pipeLineSnapShot.old_MEM_WB;
+    NumStalls = last.NumStalls.oldStalls;
     instructions_retired_--;
     cycle_s_--;
-    std::cout << "Program Counter: " << program_counter_ << std::endl;
+    std::cout << "General Purpose registers \n";
+    for (int i = 0; i < 32; i++) {
+        std::cout << "r" << i << ": "
+                << static_cast<int64_t>(registers_.ReadGpr(i)) << "  ";
+        if ((i + 1) % 8 == 0) {
+            std::cout << "\n";
+        }
+    }
+    std::cout << "\nFloating point registers \n";
+    for (int i = 0; i < 32; i++) {
+        std::cout << "f" << i << ": "
+                << (registers_.ReadFpr(i) & 0xFFFFFFFF) << "  ";
+        if ((i + 1) % 8 == 0) {
+            std::cout << "\n";
+        }
+    }
 
     redo_stack_.push(last);
 
@@ -1379,11 +1456,31 @@ void RVSSVM_STATIC::Redo() {
     }
 
     program_counter_ = next.new_pc;
+    IF_ID = next.pipeLineSnapShot.new_IF_ID;
+    ID_EX = next.pipeLineSnapShot.new_ID_EX;
+    EX_MEM = next.pipeLineSnapShot.new_EX_MEM;
+    MEM_WB = next.pipeLineSnapShot.new_MEM_WB;
+    NumStalls = next.NumStalls.newStalls;
     instructions_retired_++;
     cycle_s_++;
+    std::cout << "General Purpose registers \n";
+    for (int i = 0; i < 32; i++) {
+        std::cout << "r" << i << ": "
+                << static_cast<int64_t>(registers_.ReadGpr(i)) << "  ";
+        if ((i + 1) % 8 == 0) {
+            std::cout << "\n";
+        }
+    }
+    std::cout << "\nFloating point registers \n";
+    for (int i = 0; i < 32; i++) {
+        std::cout << "f" << i << ": "
+                << (registers_.ReadFpr(i) & 0xFFFFFFFF) << "  ";
+        if ((i + 1) % 8 == 0) {
+            std::cout << "\n";
+        }
+    }
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
-    std::cout << "Program Counter: " << program_counter_ << std::endl;
     undo_stack_.push(next);
 
 }

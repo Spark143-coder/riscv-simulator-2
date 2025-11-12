@@ -130,7 +130,7 @@ public:
     void Undo() override;
     void Redo() override;
     void Reset() override;
-
+    void DecodeHazard();
     void RequestStop() override {
         stop_requested_ = true;
     }

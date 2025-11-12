@@ -42,11 +42,18 @@ static int64_t execResult3;
 static int64_t memResult1;
 static int64_t memResult2;
 static int64_t memResult3;
-bool pickResult1;
-bool pickResult2;
-bool pickResult3;
-bool stall;
+static bool pickResult1;
+static bool pickResult2;
+static bool pickResult3;
+static bool stall;
 static int NumStalls = 0;
+static bool DStall;
+static uint DForwardA;
+static uint DForwardB;
+static int64_t DResultA;
+static int64_t DResultB;
+static uint branchTaken;
+static int64_t targetImm;
 
 static void initializeForwardControlSignals(){
     ForwardA = 0;
@@ -63,6 +70,13 @@ static void initializeForwardControlSignals(){
     pickResult1 = true;
     pickResult2 = true;
     pickResult3 = true;
+    DStall=false;
+    DForwardA=0;
+    DForwardB=0;
+    DResultA=0;
+    DResultB=0;
+    branchTaken=0;
+    targetImm=0;
 }
 
 static bool checkProcessOver(){
@@ -105,7 +119,7 @@ static void HazardDetectionUnit(){
     }
     else if((!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat()) && (ID_EX.readIsDouble() || ID_EX.readIsFloat())){
         if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
-            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1()){ForwardA=10;}
         }
     }
     else {
@@ -180,6 +194,85 @@ static void ForwardUnit(){
     }
 }
 
+void RVSSVM_STATIC::DecodeHazard(){
+    control_unit_.SetControlSignals(IF_ID.readInstruction());
+    uint32_t currentInstruction = IF_ID.readInstruction();
+    uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
+    uint8_t rs2 = (currentInstruction >> 20) & 0b11111;
+    if(!control_unit_.GetBranch())return ;
+    if(ID_EX.WriteBackSignal() && ID_EX.readRd() != 0 && rs1 == ID_EX.readRd()){
+        if(ID_EX.readIsFloat() || ID_EX.readIsDouble()){
+            uint8_t funct7 = ID_EX.readFunct7();
+            if(get_instr_encoding(Instruction::kfle_s).funct7 == funct7 || get_instr_encoding(Instruction::kfcvt_w_s).funct7 == funct7 || get_instr_encoding(Instruction::kfmv_x_w).funct7 == funct7){
+                DStall = true;
+            }
+        }
+        else DStall=true;
+    }
+    if(EX_MEM.MemRead() && EX_MEM.readRd() != 0 && EX_MEM.readRd()==rs1){
+        if(!(EX_MEM.readIsFloat() || EX_MEM.readIsDouble()))DStall=true;
+    }
+    bool changed1 = false;
+    if(EX_MEM.WriteBackSignal() && EX_MEM.readRd() != 0 && EX_MEM.readRd() == rs1 && !DStall){
+        if(EX_MEM.readIsFloat() || EX_MEM.readIsDouble()){
+            uint8_t funct7 = EX_MEM.readFunct7();
+            if(get_instr_encoding(Instruction::kfle_s).funct7 == funct7 || get_instr_encoding(Instruction::kfcvt_w_s).funct7 == funct7 || get_instr_encoding(Instruction::kfmv_x_w).funct7 == funct7){
+                DForwardA = 10;DResultA=EX_MEM.readExecutionResult();changed1=true;
+            }
+        }
+        else {DForwardA=10;DResultA=EX_MEM.readExecutionResult();changed1=true;}
+    }
+    if(MEM_WB.WriteBackSignal() && MEM_WB.readRd() != 0 && MEM_WB.readRd() == rs1 && !DStall && !changed1){
+        if(MEM_WB.readIsFloat() || MEM_WB.readIsDouble() ){
+            uint8_t funct7 = MEM_WB.readFunct7();
+            if(get_instr_encoding(Instruction::kfle_s).funct7 == funct7 || get_instr_encoding(Instruction::kfcvt_w_s).funct7 == funct7 || get_instr_encoding(Instruction::kfmv_x_w).funct7 == funct7){
+                DForwardA=1;DResultA=MEM_WB.readExecutionResult();
+            }
+        }
+        else{
+            DForwardA=1;
+            if(MEM_WB.MemRead())DResultA=MEM_WB.readMemoryResult();
+            else DResultA=MEM_WB.readExecutionResult();
+        }
+    }
+    bool changed2 = false;
+    if(ID_EX.WriteBackSignal() && ID_EX.readRd() != 0 && rs2 == ID_EX.readRd() && !control_unit_.GetAluSrc()){
+        if(ID_EX.readIsFloat() || ID_EX.readIsDouble()){
+            uint8_t funct7 = ID_EX.readFunct7();
+            if(get_instr_encoding(Instruction::kfle_s).funct7 == funct7 || get_instr_encoding(Instruction::kfcvt_w_s).funct7 == funct7 || get_instr_encoding(Instruction::kfmv_x_w).funct7 == funct7){
+                DStall = true;
+            }
+        }
+        else DStall=true;
+    }
+    if(EX_MEM.MemRead() && EX_MEM.readRd() != 0 && EX_MEM.readRd()==rs2 && !control_unit_.GetAluSrc()){
+        if(!(EX_MEM.readIsFloat() || EX_MEM.readIsDouble()))DStall=true;
+    }
+    if(EX_MEM.WriteBackSignal() && EX_MEM.readRd() != 0 && EX_MEM.readRd() == rs2 && !control_unit_.GetAluSrc() && !DStall){
+        if(EX_MEM.readIsFloat() || EX_MEM.readIsDouble()){
+            uint8_t funct7 = EX_MEM.readFunct7();
+            if(get_instr_encoding(Instruction::kfle_s).funct7 == funct7 || get_instr_encoding(Instruction::kfcvt_w_s).funct7 == funct7 || get_instr_encoding(Instruction::kfmv_x_w).funct7 == funct7){
+                DForwardB=10;DResultB=EX_MEM.readExecutionResult();changed2=true;
+            }
+        }
+        else {DForwardB=10;DResultB=EX_MEM.readExecutionResult();changed2=true;}
+    }
+    if(MEM_WB.WriteBackSignal() && MEM_WB.readRd() != 0 && MEM_WB.readRd() == rs2 && !control_unit_.GetAluSrc() && !DStall && !changed2){
+        if(MEM_WB.readIsFloat() || MEM_WB.readIsDouble()){
+            uint8_t funct7 = MEM_WB.readFunct7();
+            if(get_instr_encoding(Instruction::kfle_s).funct7 == funct7 || get_instr_encoding(Instruction::kfcvt_w_s).funct7 == funct7 || get_instr_encoding(Instruction::kfmv_x_w).funct7 == funct7){
+                DForwardB=1;DResultB=MEM_WB.readMemoryResult();
+            }
+        }
+        else{
+            DForwardB=1;
+            if(MEM_WB.MemRead())DResultB=MEM_WB.readMemoryResult();
+            else DResultB=MEM_WB.readExecutionResult();
+        }
+    }
+    control_unit_.SetControlSignals(0);
+}
+
 RVSSVM_STATIC::~RVSSVM_STATIC() = default;
 
 void RVSSVM_STATIC::Fetch() {
@@ -200,6 +293,59 @@ void RVSSVM_STATIC::Decode() {
     uint64_t reg1_value = registers_.ReadGpr(rs1);
     uint64_t reg2_value = registers_.ReadGpr(rs2);
     alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
+
+    if(control_unit_.GetBranch()){
+        if(DForwardA > 0)reg1_value=DResultA;
+        if(DForwardB > 0)reg2_value=DResultB;
+        if (control_unit_.GetAluSrc()) {
+            reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
+        }
+        bool overflow = false;
+        std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
+        if (opcode==get_instr_encoding(Instruction::kjalr).opcode || opcode==get_instr_encoding(Instruction::kjal).opcode){
+            return_address_ = program_counter_;
+            next_pc_ = program_counter_;
+            branchTaken=true;
+            if(opcode==get_instr_encoding(Instruction::kjalr).opcode){
+                targetImm = -(program_counter_ - 4) + (execution_result_);
+            }
+            else targetImm = imm;
+        }
+        else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
+                    opcode==get_instr_encoding(Instruction::kbne).opcode ||
+                    opcode==get_instr_encoding(Instruction::kblt).opcode ||
+                    opcode==get_instr_encoding(Instruction::kbge).opcode ||
+                    opcode==get_instr_encoding(Instruction::kbltu).opcode ||
+                    opcode==get_instr_encoding(Instruction::kbgeu).opcode) {
+            switch (funct3) {
+                case 0b000: {// BEQ
+                branch_flag_ = (execution_result_==0);
+                break;
+                }
+                case 0b001: {// BNE
+                branch_flag_ = (execution_result_!=0);
+                break;
+                }
+                case 0b100: {// BLT
+                branch_flag_ = (execution_result_==1);
+                break;
+                }
+                case 0b101: {// BGE
+                branch_flag_ = (execution_result_==0);
+                break;
+                }
+                case 0b110: {// BLTU
+                branch_flag_ = (execution_result_==1);
+                break;
+                }
+                case 0b111: {// BGEU
+                branch_flag_ = (execution_result_==0);
+                break;
+                }
+            }
+        }
+        if (branch_flag_ && opcode==0b1100011){targetImm = imm;branchTaken=true;}
+    }
 
     ID_EX.modifyReadData1(reg1_value);
     ID_EX.modifyReadData2(reg2_value);
@@ -264,6 +410,9 @@ void RVSSVM_STATIC::Execute() {
 
     alu::AluOp aluOperation = ID_EX.readAluOp();
     std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
+    if(get_instr_encoding(Instruction::klui).opcode == opcode && ID_EX.WriteBackSignal()){
+        execution_result_ = (ID_EX.readImmediate() << 12 );
+    }
     EX_MEM.modifyExecutionResult(execution_result_);
     EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
     EX_MEM.modifyMemRead(ID_EX.MemRead());
@@ -277,64 +426,64 @@ void RVSSVM_STATIC::Execute() {
     EX_MEM.modifyIsCSR(ID_EX.readIsCSR());
     EX_MEM.modifyRd(ID_EX.readRd());
     EX_MEM.modifyFunct7(ID_EX.readFunct7());
-    EX_MEM.modifyRs1(ID_EX.readRs1());
+    EX_MEM.modifyRs1(ID_EX.readRs1());ForwardA=10;
     EX_MEM.modifyRs2(ID_EX.readRs2());
     EX_MEM.modifyRs3(ID_EX.readRs3());
 
-    if (ID_EX.readIsBranch()) {
-        if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
-            opcode==get_instr_encoding(Instruction::kjal).opcode) {
-        next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
-        UpdateProgramCounter(-4);
-        return_address_ = program_counter_ + 4;
-        if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
-            UpdateProgramCounter(-program_counter_ + (execution_result_));
-        } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
-            UpdateProgramCounter(imm);
-        }
-        } else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
-                    opcode==get_instr_encoding(Instruction::kbne).opcode ||
-                    opcode==get_instr_encoding(Instruction::kblt).opcode ||
-                    opcode==get_instr_encoding(Instruction::kbge).opcode ||
-                    opcode==get_instr_encoding(Instruction::kbltu).opcode ||
-                    opcode==get_instr_encoding(Instruction::kbgeu).opcode) {
-        switch (funct3) {
-            case 0b000: {// BEQ
-            branch_flag_ = (execution_result_==0);
-            break;
-            }
-            case 0b001: {// BNE
-            branch_flag_ = (execution_result_!=0);
-            break;
-            }
-            case 0b100: {// BLT
-            branch_flag_ = (execution_result_==1);
-            break;
-            }
-            case 0b101: {// BGE
-            branch_flag_ = (execution_result_==0);
-            break;
-            }
-            case 0b110: {// BLTU
-            branch_flag_ = (execution_result_==1);
-            break;
-            }
-            case 0b111: {// BGEU
-            branch_flag_ = (execution_result_==0);
-            break;
-            }
-        }
+    // if (ID_EX.readIsBranch()) {
+    //     if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
+    //         opcode==get_instr_encoding(Instruction::kjal).opcode) {
+    //     next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
+    //     UpdateProgramCounter(-4);
+    //     return_address_ = program_counter_ + 4;
+    //     if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
+    //         UpdateProgramCounter(-program_counter_ + (execution_result_));
+    //     } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
+    //         UpdateProgramCounter(imm);
+    //     }
+    //     } else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
+    //                 opcode==get_instr_encoding(Instruction::kbne).opcode ||
+    //                 opcode==get_instr_encoding(Instruction::kblt).opcode ||
+    //                 opcode==get_instr_encoding(Instruction::kbge).opcode ||
+    //                 opcode==get_instr_encoding(Instruction::kbltu).opcode ||
+    //                 opcode==get_instr_encoding(Instruction::kbgeu).opcode) {
+    //     switch (funct3) {
+    //         case 0b000: {// BEQ
+    //         branch_flag_ = (execution_result_==0);
+    //         break;
+    //         }
+    //         case 0b001: {// BNE
+    //         branch_flag_ = (execution_result_!=0);
+    //         break;
+    //         }
+    //         case 0b100: {// BLT
+    //         branch_flag_ = (execution_result_==1);
+    //         break;
+    //         }
+    //         case 0b101: {// BGE
+    //         branch_flag_ = (execution_result_==0);
+    //         break;
+    //         }
+    //         case 0b110: {// BLTU
+    //         branch_flag_ = (execution_result_==1);
+    //         break;
+    //         }
+    //         case 0b111: {// BGEU
+    //         branch_flag_ = (execution_result_==0);
+    //         break;
+    //         }
+    //     }
 
-        }
+    //     }
 
 
 
-    }
+    // }
 
-    if (branch_flag_ && opcode==0b1100011) {
-        UpdateProgramCounter(-4);
-        UpdateProgramCounter(imm);
-    }
+    // if (branch_flag_ && opcode==0b1100011) {
+    //     UpdateProgramCounter(-4);
+    //     UpdateProgramCounter(imm);
+    // }
 
 
     if (opcode==get_instr_encoding(Instruction::kauipc).opcode) { // AUIPC
@@ -376,7 +525,6 @@ void RVSSVM_STATIC::ExecuteFloat() {
     if(ForwardB==10 || ForwardB==1){
         if(pickResult2)reg2_value=execResult2;
         else reg2_value=memResult2;
-        std::cout<<reg2_value<<std::endl;
     }
 
     if(ForwardC==10 || ForwardC==1){
@@ -1118,21 +1266,27 @@ void RVSSVM_STATIC::Run() {
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();
-        if(Branch){
-            IF_ID.fetchInstruction(0);
-            ID_EX.modifyWriteBackSignal(0);
-            ID_EX.modifyMemRead(0);
-            ID_EX.modifyMemWrite(0);
-            UpdateProgramCounter(-8);
-            NumStalls+=2;
-        }
-        //std::cout << "Program Counter: " << program_counter_ << std::endl;
+        DecodeHazard();
+
         WriteBack();
         WriteMemory();
         if(!stall){
             Execute();
-            Decode();
-            Fetch();
+            if(!DStall){
+                Decode();
+                Fetch();
+                if(branchTaken){
+                    UpdateProgramCounter(-8);
+                    UpdateProgramCounter(targetImm);
+                    IF_ID.fetchInstruction(0);NumStalls++;
+                }
+            }
+            else{
+                NumStalls++;
+                ID_EX.modifyWriteBackSignal(0);
+                ID_EX.modifyMemRead(0);
+                ID_EX.modifyMemWrite(0);
+            }
         }
         else{
             NumStalls++;
@@ -1143,27 +1297,32 @@ void RVSSVM_STATIC::Run() {
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
-        // std::cout << "Program Counter: " << program_counter_ << std::endl;
     }
     while(!checkProcessOver()){
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();
-        if(Branch){
-            IF_ID.fetchInstruction(0);
-            ID_EX.modifyWriteBackSignal(0);
-            ID_EX.modifyMemRead(0);
-            ID_EX.modifyMemWrite(0);
-            UpdateProgramCounter(-8);
-            NumStalls+=2;
-        }
-        //std::cout << "Program Counter: " << program_counter_ << std::endl;
+        DecodeHazard();
+
         WriteBack();
         WriteMemory();
         if(!stall){
             Execute();
-            Decode();
-            Fetch();
+            if(!DStall){
+                Decode();
+                Fetch();
+                if(branchTaken){
+                    UpdateProgramCounter(-8);
+                    UpdateProgramCounter(targetImm);
+                    IF_ID.fetchInstruction(0);NumStalls++;
+                }
+            }
+            else{
+                NumStalls++;
+                ID_EX.modifyWriteBackSignal(0);
+                ID_EX.modifyMemRead(0);
+                ID_EX.modifyMemWrite(0);
+            }
         }
         else{
             NumStalls++;
@@ -1264,20 +1423,27 @@ void RVSSVM_STATIC::Step() {
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();
-        if(Branch){
-            IF_ID.fetchInstruction(0);
-            ID_EX.modifyWriteBackSignal(0);
-            ID_EX.modifyMemRead(0);
-            ID_EX.modifyMemWrite(0);
-            UpdateProgramCounter(-8);
-            NumStalls+=2;
-        }
+        DecodeHazard();
+
         WriteBack();
         WriteMemory();
         if(!stall){
             Execute();
-            Decode();
-            Fetch();
+            if(!DStall){
+                Decode();
+                Fetch();
+                if(branchTaken){
+                    UpdateProgramCounter(-8);
+                    UpdateProgramCounter(targetImm);
+                    IF_ID.fetchInstruction(0);NumStalls++;
+                }
+            }
+            else{
+                NumStalls++;
+                ID_EX.modifyWriteBackSignal(0);
+                ID_EX.modifyMemRead(0);
+                ID_EX.modifyMemWrite(0);
+            }
         }
         else{
             NumStalls++;

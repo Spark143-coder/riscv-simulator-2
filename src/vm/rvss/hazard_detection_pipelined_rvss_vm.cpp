@@ -215,6 +215,9 @@ void RVSSVM_HAZARD::Execute() {
 
     alu::AluOp aluOperation = ID_EX.readAluOp();
     std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
+    if(get_instr_encoding(Instruction::klui).opcode == opcode && ID_EX.WriteBackSignal()){
+        execution_result_ = (ID_EX.readImmediate() << 12 );
+    }
 
     // std::cout<<"result: "<<execution_result_<<std::endl;
     EX_MEM.modifyExecutionResult(execution_result_);

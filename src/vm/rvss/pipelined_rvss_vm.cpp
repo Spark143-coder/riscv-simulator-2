@@ -93,7 +93,6 @@ void RVSSVM_PIPE::Decode() {
 
 void RVSSVM_PIPE::Execute() {
 
-    // std::cout<<"Execute"<<std::endl;
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
 
@@ -122,12 +121,14 @@ void RVSSVM_PIPE::Execute() {
         reg2_value = static_cast<uint64_t>(static_cast<int64_t>(imm));
     }
 
-    // std::cout<<"rs2: "<<reg2_value<<std::endl;
 
     alu::AluOp aluOperation = ID_EX.readAluOp();
     std::tie(execution_result_, overflow) = alu_.execute(aluOperation, reg1_value, reg2_value);
 
-    // std::cout<<"result: "<<execution_result_<<std::endl;
+    if(get_instr_encoding(Instruction::klui).opcode == opcode && ID_EX.WriteBackSignal()){
+        execution_result_ = (ID_EX.readImmediate() << 12 );
+    }
+
     EX_MEM.modifyExecutionResult(execution_result_);
     EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
     EX_MEM.modifyMemRead(ID_EX.MemRead());

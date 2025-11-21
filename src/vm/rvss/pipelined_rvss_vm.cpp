@@ -44,18 +44,13 @@ static bool checkProcessOver(){
 RVSSVM_PIPE::~RVSSVM_PIPE() = default;
 
 void RVSSVM_PIPE::Fetch() {
-  // std::cout<<"Fetch"<<std::endl;
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
-    // std::cout<<"Current Instruction: "<<current_instruction_<<std::endl;
     IF_ID.fetchInstruction(current_instruction_);
     UpdateProgramCounter(4);
 }
 
 void RVSSVM_PIPE::Decode() {
-
-    // std::cout<<"Decode"<<std::endl;
     control_unit_.SetControlSignals(IF_ID.readInstruction());
-    // std::cout<<"Current Instruction: "<<IF_ID.readInstruction()<<std::endl;
     uint32_t currentInstruction = IF_ID.readInstruction();
     uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
     uint8_t rs2 = (currentInstruction >> 20) & 0b11111;
@@ -66,9 +61,6 @@ void RVSSVM_PIPE::Decode() {
     uint64_t reg1_value = registers_.ReadGpr(rs1);
     uint64_t reg2_value = registers_.ReadGpr(rs2);
     alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
-    
-    //std::cout<<"imm: "<<imm<<std::endl;
-    // std::cout<<"rs1: "<<reg1_value<<std::endl;
 
     ID_EX.modifyReadData1(reg1_value);
     ID_EX.modifyReadData2(reg2_value);
@@ -240,7 +232,6 @@ void RVSSVM_PIPE::ExecuteFloat() {
     alu::AluOp aluOperation = ID_EX.readAluOp();
     std::tie(execution_result_, fcsr_status) = alu::Alu::fpexecute(aluOperation, reg1_value, reg2_value, reg3_value, rm);
 
-    // std::cout << "+++++ Float execution result: " << execution_result_ << std::endl;
 
     EX_MEM.modifyExecutionResult(execution_result_);
     EX_MEM.modifyIsBranch(ID_EX.readIsBranch());
@@ -494,7 +485,6 @@ void RVSSVM_PIPE::HandleSyscall() {
 }
 
 void RVSSVM_PIPE::WriteMemory() {
-    // std::cout<<"Write Memory"<<std::endl;
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
     uint8_t funct3 = EX_MEM.readFunct3();
@@ -629,7 +619,6 @@ void RVSSVM_PIPE::WriteMemoryFloat() {
         memory_result_ = memory_controller_.ReadWord(EX_MEM.readExecutionResult());
     }
 
-    // std::cout << "+++++ Memory result: " << memory_result_ << std::endl;
 
     uint64_t addr = 0;
     std::vector<uint8_t> old_bytes_vec;
@@ -717,7 +706,6 @@ void RVSSVM_PIPE::WriteMemoryDouble() {
 }
 
 void RVSSVM_PIPE::WriteBack() {
-    // std::cout<<"Writeback"<<std::endl;
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
     uint8_t rd = MEM_WB.readRd();
@@ -964,7 +952,6 @@ void RVSSVM_PIPE::Run() {
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
-        // std::cout << "Program Counter: " << program_counter_ << std::endl;
     }
     WriteBack();
     WriteMemory();
@@ -990,8 +977,11 @@ void RVSSVM_PIPE::Run() {
     }
     std::cout << "\nFloating point registers \n";
     for (int i = 0; i < 32; i++) {
+        float a;
+        uint64_t b = registers_.ReadFpr(i);
+        std::memcpy(&a,&b,sizeof(float));
         std::cout << "f" << i << ": "
-                << (registers_.ReadFpr(i) & 0xFFFFFFFF) << "  ";
+                << a << "  ";
         if ((i + 1) % 8 == 0) {
             std::cout << "\n";
         }
@@ -1021,7 +1011,6 @@ void RVSSVM_PIPE::DebugRun() {
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
-        //std::cout << "Program Counter: " << program_counter_ << std::endl;
 
         current_delta_.new_pc = program_counter_;
         // history_.push(current_delta_);

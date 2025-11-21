@@ -79,10 +79,9 @@ static bool checkProcessOver(){
 //         case get_instr_encoding(Instruction::kfmv_x_w).funct7: // fmv.x.w , fclass.s
 
 static void HazardDetectionUnit(){
-
     if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
-        if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+        if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()))ForwardB=10;
     }
 
     else if((EX_MEM.readIsDouble() || EX_MEM.readIsFloat()) && (ID_EX.readIsFloat() || ID_EX.readIsDouble())){
@@ -93,12 +92,13 @@ static void HazardDetectionUnit(){
         }
         else{
             if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
-                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
-                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs3())ForwardC=10;
+                if(ID_EX.MemWrite()){
+                    if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2())ForwardB=10;
+                }
             }
             else{
                 if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
-                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+                if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()))ForwardB=10;
                 if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()==ID_EX.readRs3())ForwardC=10;
             }
         }
@@ -111,30 +111,31 @@ static void HazardDetectionUnit(){
     else {
         if(EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || EX_MEM.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
             if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
-            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=10;
+            if(EX_MEM.WriteBackSignal() && EX_MEM.readRd()!=0 && EX_MEM.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()))ForwardB=10;
         }
     }
 
     if(!MEM_WB.readIsDouble() && !MEM_WB.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
         if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
-        if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal() && ForwardB!=10)ForwardB=1;
+        if(MEM_WB.WriteBackSignal() && (MEM_WB.readRd()!=0) && MEM_WB.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()) && ForwardB!=10)ForwardB=1;
     }
     else if((MEM_WB.readIsDouble() || MEM_WB.readIsFloat()) && (ID_EX.readIsFloat() || ID_EX.readIsDouble())){
 
         if(MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
             if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
-                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
             }
         }
         else{
             if(ID_EX.readFunct7()==0b1101000 || ID_EX.readFunct7()==0b1111000 || ID_EX.readOpcode()==0b0000111 || ID_EX.readOpcode()==0b0100111){
-                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=1;
-                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3())ForwardC=1;
+                if(ID_EX.MemWrite()){
+                    if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()) && ForwardB!= 10)ForwardB=1;
+                }
             }
             else{
-                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs1())ForwardA=1;
-                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && !ID_EX.ExecuteSignal())ForwardB=1;
-                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3())ForwardC=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!= 10)ForwardA=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()) && ForwardB!=10)ForwardB=1;
+                if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()==ID_EX.readRs3() && ForwardC!= 10)ForwardC=1;
             }
         }
     }
@@ -146,7 +147,7 @@ static void HazardDetectionUnit(){
     else{
         if(MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfle_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfcvt_w_s).funct7 || MEM_WB.readFunct7()==get_instr_encoding(Instruction::kfmv_x_w).funct7){
             if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs1() && ForwardA!=10)ForwardA=1;
-            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs2() && ForwardB!=10 && !ID_EX.ExecuteSignal())ForwardB=1;
+            if(MEM_WB.WriteBackSignal() && MEM_WB.readRd()!=0 && MEM_WB.readRd()==ID_EX.readRs2() && ForwardB!=10 && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()))ForwardB=1;
         }
     }
 
@@ -185,6 +186,7 @@ RVSSVM_FORWARD::~RVSSVM_FORWARD() = default;
 void RVSSVM_FORWARD::Fetch() {
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
     IF_ID.fetchInstruction(current_instruction_);
+    IF_ID.modifyProgramCounter(program_counter_);
     UpdateProgramCounter(4);
 }
 
@@ -220,6 +222,7 @@ void RVSSVM_FORWARD::Decode() {
     ID_EX.modifyRs1(rs1);
     ID_EX.modifyRs2(rs2);
     ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
+    ID_EX.modifyProgramCounter(IF_ID.readProgramCounter());
 }
 
 void RVSSVM_FORWARD::Execute() {
@@ -242,10 +245,11 @@ void RVSSVM_FORWARD::Execute() {
         ExecuteCsr();
         return;
     }
+    ID_EX.modifyReadData1(registers_.ReadGpr(ID_EX.readRs1()));
+    ID_EX.modifyReadData2(registers_.ReadGpr(ID_EX.readRs2()));
     uint64_t reg1_value = ID_EX.ReadData1();
     uint64_t reg2_value = ID_EX.ReadData2();
     int32_t imm = ID_EX.readImmediate();
-
     if(ForwardA==10 || ForwardA==1){
         if(pickResult1)reg1_value=execResult1;
         else reg1_value=memResult1;
@@ -284,18 +288,18 @@ void RVSSVM_FORWARD::Execute() {
     EX_MEM.modifyRs1(ID_EX.readRs1());
     EX_MEM.modifyRs2(ID_EX.readRs2());
     EX_MEM.modifyRs3(ID_EX.readRs3());
-
     if (ID_EX.readIsBranch()) {
         if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
             opcode==get_instr_encoding(Instruction::kjal).opcode) {
-        next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
-        UpdateProgramCounter(-4);
-        return_address_ = program_counter_ + 4;
-        if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
-            UpdateProgramCounter(-program_counter_ + (execution_result_));
-        } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
-            UpdateProgramCounter(imm);
-        }
+            next_pc_ = static_cast<int64_t>(ID_EX.readProgramCounter()+4); // PC was already updated in Fetch()
+            UpdateProgramCounter(-4);
+            return_address_ = ID_EX.readProgramCounter() + 4;
+                if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
+                    UpdateProgramCounter(-program_counter_ + (execution_result_) + 4);
+                } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
+                    UpdateProgramCounter(imm);
+                }
+            execution_result_ = next_pc_;
         } else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
                     opcode==get_instr_encoding(Instruction::kbne).opcode ||
                     opcode==get_instr_encoding(Instruction::kblt).opcode ||
@@ -344,6 +348,7 @@ void RVSSVM_FORWARD::Execute() {
     if (opcode==get_instr_encoding(Instruction::kauipc).opcode) { // AUIPC
         execution_result_ = static_cast<int64_t>(program_counter_) - 4 + (imm << 12);
     }
+    EX_MEM.modifyNextPC(next_pc_);
     EX_MEM.modifyExecutionResult(execution_result_);
 }
 
@@ -380,7 +385,6 @@ void RVSSVM_FORWARD::ExecuteFloat() {
     if(ForwardB==10 || ForwardB==1){
         if(pickResult2)reg2_value=execResult2;
         else reg2_value=memResult2;
-        std::cout<<reg2_value<<std::endl;
     }
 
     if(ForwardC==10 || ForwardC==1){
@@ -728,6 +732,7 @@ void RVSSVM_FORWARD::WriteMemory() {
     MEM_WB.modifyFunct7(EX_MEM.readFunct7());
     MEM_WB.modifyRs1(EX_MEM.readRs1());
     MEM_WB.modifyRs3(EX_MEM.readRs3());
+    MEM_WB.modifyNextPC(EX_MEM.readNextPC());
     uint64_t addr = 0;
     std::vector<uint8_t> old_bytes_vec;
     std::vector<uint8_t> new_bytes_vec;
@@ -924,7 +929,7 @@ void RVSSVM_FORWARD::WriteBack() {
         }
         case get_instr_encoding(Instruction::kjalr).opcode: /* JALR */
         case get_instr_encoding(Instruction::kjal).opcode: /* JAL */ {
-            registers_.WriteGpr(rd, next_pc_);
+            registers_.WriteGpr(rd, MEM_WB.readNextPC());
             break;
         }
         case get_instr_encoding(Instruction::klui).opcode: /* LUI */ {
@@ -936,10 +941,10 @@ void RVSSVM_FORWARD::WriteBack() {
     }
 
     if (opcode==get_instr_encoding(Instruction::kjal).opcode) /* JAL */ {
-        // Updated in Execute()
+        registers_.WriteGpr(rd, MEM_WB.readNextPC());
     }
     if (opcode==get_instr_encoding(Instruction::kjalr).opcode) /* JALR */ {
-        // registers_.WriteGpr(rd, return_address_); // Write back to rs1
+        registers_.WriteGpr(rd, MEM_WB.readNextPC()); // Write back to rs1
         // Updated in Execute()
     }
 
@@ -1117,7 +1122,7 @@ void RVSSVM_FORWARD::WriteBackCsr() {
 void RVSSVM_FORWARD::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
-    while (!stop_requested_ && program_counter_ < program_size_) {
+    while (!stop_requested_ && program_counter_ < program_size_ ) {
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
         initializeForwardControlSignals();
         HazardDetectionUnit();
@@ -1127,10 +1132,17 @@ void RVSSVM_FORWARD::Run() {
             ID_EX.modifyWriteBackSignal(0);
             ID_EX.modifyMemRead(0);
             ID_EX.modifyMemWrite(0);
+            ID_EX.modifyIsBranch(0);
             UpdateProgramCounter(-8);
             NumStalls+=2;
+            WriteBack();
+            WriteMemory();
+            Execute();
+            Decode();
+            Fetch();
+            cycle_s_++;
+            continue;
         }
-        //std::cout << "Program Counter: " << program_counter_ << std::endl;
         WriteBack();
         WriteMemory();
         if(!stall){
@@ -1150,6 +1162,7 @@ void RVSSVM_FORWARD::Run() {
 
     }
     while(!checkProcessOver()){
+        if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();
@@ -1158,8 +1171,16 @@ void RVSSVM_FORWARD::Run() {
             ID_EX.modifyWriteBackSignal(0);
             ID_EX.modifyMemRead(0);
             ID_EX.modifyMemWrite(0);
+            ID_EX.modifyIsBranch(0);
             UpdateProgramCounter(-8);
             NumStalls+=2;
+            WriteBack();
+            WriteMemory();
+            Execute();
+            Decode();
+            Fetch();
+            cycle_s_++;
+            continue;
         }
 
         WriteBack();
@@ -1189,8 +1210,11 @@ void RVSSVM_FORWARD::Run() {
     }
     std::cout << "\nFloating point registers \n";
     for (int i = 0; i < 32; i++) {
+        float a;
+        uint64_t b = registers_.ReadFpr(i);
+        std::memcpy(&a,&b,sizeof(float));
         std::cout << "f" << i << ": "
-                << (registers_.ReadFpr(i) & 0xFFFFFFFF) << "  ";
+                << a << "  ";
         if ((i + 1) % 8 == 0) {
             std::cout << "\n";
         }
@@ -1273,25 +1297,34 @@ void RVSSVM_FORWARD::Step() {
             ID_EX.modifyWriteBackSignal(0);
             ID_EX.modifyMemRead(0);
             ID_EX.modifyMemWrite(0);
+            ID_EX.modifyIsBranch(0);
             UpdateProgramCounter(-8);
             NumStalls+=2;
-        }
-        //std::cout << "Program Counter: " << program_counter_ << std::endl;
-        WriteBack();
-        WriteMemory();
-        if(!stall){
+            WriteBack();
+            WriteMemory();
             Execute();
             Decode();
             Fetch();
+            cycle_s_++;
         }
         else{
-            NumStalls++;
-            EX_MEM.modifyWriteBackSignal(0);
-            EX_MEM.modifyMemRead(0);
-            EX_MEM.modifyMemWrite(0);
+            WriteBack();
+            WriteMemory();
+            if(!stall){
+                Execute();
+                Decode();
+                Fetch();
+            }
+            else{
+                NumStalls++;
+                EX_MEM.modifyWriteBackSignal(0);
+                EX_MEM.modifyMemRead(0);
+                EX_MEM.modifyMemWrite(0);
+            }
+            cycle_s_++;
         }
+        
         instructions_retired_++;
-        cycle_s_++;
 
         current_delta_.new_pc = program_counter_;
         current_delta_.pipeLineSnapShot.new_IF_ID = IF_ID;
@@ -1466,7 +1499,6 @@ void RVSSVM_FORWARD::Redo() {
     NumStalls = next.NumStalls.newStalls;
     instructions_retired_++;
     cycle_s_++;
-    std::cout << "General Purpose registers \n";
     std::cout << "General Purpose registers \n";
     for (int i = 0; i < 32; i++) {
         std::cout << "r" << i << ": "

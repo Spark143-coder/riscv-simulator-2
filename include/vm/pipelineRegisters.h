@@ -28,6 +28,8 @@ class pipelineRegister{
         uint8_t rs2;
         uint8_t rs3;
         uint8_t funct7;
+        uint64_t programCounter;
+        uint64_t nextPC;
     public:
         pipelineRegister();
         pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd);
@@ -54,6 +56,8 @@ class pipelineRegister{
         uint8_t readRs2() const;
         uint8_t readRs3() const;
         uint8_t readFunct7() const;
+        uint64_t readProgramCounter() const;
+        int64_t readNextPC() const;
 
         void fetchInstruction(uint32_t instruction);
         void modifyReadData1(uint64_t readData1);
@@ -77,6 +81,8 @@ class pipelineRegister{
         void modifyRs2(uint8_t rs2);
         void modifyRs3(uint8_t rs3);
         void modifyFunct7(uint8_t funct7);
+        void modifyProgramCounter(uint64_t pc);
+        void modifyNextPC(int64_t nextPC);
 };
 
 extern pipelineRegister IF_ID;

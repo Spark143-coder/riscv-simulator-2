@@ -1,11 +1,5 @@
 #include <bits/stdc++.h>
 #include "vm/pipelineRegisters.h"
-#include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
-#include "vm/rvss/forwarding_pipelined_rvss_vm.h"
-#include "vm/rvss/hazard_detection_pipelined_rvss_vm_2.h"
-#include "vm/rvss/pipelined_rvss_vm.h"
-#include "vm/rvss/rvss_vm.h"
-#include "vm/rvss/static_branch_pipelined_rvss_vm.h"
 
 pipelineRegister::pipelineRegister(){
     this-> instruction = 0;
@@ -29,6 +23,7 @@ pipelineRegister::pipelineRegister(){
     this-> rs2 = 0;
     this-> rs3 = 0;
     this-> funct7 = 0;
+    this-> programCounter = 0;
 }
 
 pipelineRegister::pipelineRegister(uint32_t instruction,uint64_t readData1,uint64_t readData2,int64_t immediate,uint memRead,uint memWrite,uint executeSignal,uint writeBack,uint8_t opcode,uint8_t funct3,uint8_t funct7,uint isFloat,uint isDouble,uint isCSR,uint isBranch,uint8_t rd){
@@ -149,6 +144,14 @@ uint8_t pipelineRegister::readFunct7() const{
     return (this->funct7);
 }
 
+uint64_t pipelineRegister::readProgramCounter() const{
+    return (this->programCounter);
+}
+
+int64_t pipelineRegister::readNextPC() const{
+    return (this->nextPC);
+}
+
 void pipelineRegister::fetchInstruction(uint32_t instruction) {
     this->instruction = instruction;
 }
@@ -235,6 +238,14 @@ void pipelineRegister::modifyRs2(uint8_t rs2){
 
 void pipelineRegister::modifyFunct7(uint8_t funct7){
     this->funct7 = funct7;
+}
+
+void pipelineRegister::modifyProgramCounter(uint64_t pc){
+    this->programCounter = pc;
+}
+
+void pipelineRegister::modifyNextPC(int64_t nextPC){
+    this->nextPC = nextPC;
 }
 
 pipelineRegister IF_ID(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);

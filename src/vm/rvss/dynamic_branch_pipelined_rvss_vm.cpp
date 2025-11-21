@@ -4,7 +4,7 @@
  * @author Vishank Singh, https://github.com/VishankSingh
  */
 
-#include "vm/rvss/static_branch_pipelined_rvss_vm.h"
+#include "vm/rvss/dynamic_branch_pipelined_rvss_vm.h"
 
 #include "utils.h"
 #include "globals.h"
@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <iostream>
 #include <tuple>
+#include <map>
+#include <vector>
 #include <stack>
 #include <algorithm>
 #include <thread>
@@ -27,7 +29,7 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
-RVSSVM_STATIC::RVSSVM_STATIC() : VmBase() {
+RVSSVM_DYNAMIC::RVSSVM_DYNAMIC() : VmBase() {
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
 }
@@ -54,6 +56,9 @@ static int64_t DResultA;
 static int64_t DResultB;
 static uint branchTaken;
 static int64_t targetImm;
+static bool flush;
+static std::map<uint64_t,std::vector<uint64_t>> branchHistory;
+static uint64_t correctPC;
 
 static void initializeForwardControlSignals(){
     ForwardA = 0;
@@ -71,12 +76,14 @@ static void initializeForwardControlSignals(){
     pickResult2 = true;
     pickResult3 = true;
     DStall=false;
-    DForwardA=0;
-    DForwardB=0;
-    DResultA=0;
-    DResultB=0;
-    branchTaken=0;
-    targetImm=0;
+    DForwardA = 0;
+    DForwardB = 0;
+    DResultA = 0;
+    DResultB = 0;
+    branchTaken = 0;
+    targetImm = 0;
+    flush = false;
+    correctPC = 0;
 }
 
 static bool checkProcessOver(){
@@ -93,6 +100,7 @@ static bool checkProcessOver(){
 //         case get_instr_encoding(Instruction::kfmv_x_w).funct7: // fmv.x.w , fclass.s
 
 static void HazardDetectionUnit(){
+    
     if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs2() && (!ID_EX.ExecuteSignal() || ID_EX.MemWrite()))ForwardB=10;
@@ -195,7 +203,7 @@ static void ForwardUnit(){
     }
 }
 
-void RVSSVM_STATIC::DecodeHazard(){
+void RVSSVM_DYNAMIC::DecodeHazard(){
     control_unit_.SetControlSignals(IF_ID.readInstruction());
     uint32_t currentInstruction = IF_ID.readInstruction();
     uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
@@ -274,16 +282,35 @@ void RVSSVM_STATIC::DecodeHazard(){
     control_unit_.SetControlSignals(0);
 }
 
-RVSSVM_STATIC::~RVSSVM_STATIC() = default;
+RVSSVM_DYNAMIC::~RVSSVM_DYNAMIC() = default;
 
-void RVSSVM_STATIC::Fetch() {
+void RVSSVM_DYNAMIC::Fetch() {
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
     IF_ID.fetchInstruction(current_instruction_);
     IF_ID.modifyProgramCounter(program_counter_);
-    UpdateProgramCounter(4);
+    uint8_t opcode = current_instruction_ & 0b1111111;
+    if(branchHistory.find(program_counter_)!=branchHistory.end()){
+        if(branchHistory[program_counter_][0] ){
+            if(opcode == get_instr_encoding(Instruction::kjalr).opcode){
+                UpdateProgramCounter(4);
+            }
+            else{
+                uint64_t value = branchHistory[program_counter_][1];
+                UpdateProgramCounter(-program_counter_);
+                UpdateProgramCounter(value);
+            }
+            // uint64_t value = branchHistory[program_counter_][1];
+            // UpdateProgramCounter(-program_counter_);
+            // UpdateProgramCounter(value);
+        }
+        else {
+            UpdateProgramCounter(4);
+        }
+    }
+    else UpdateProgramCounter(4);
 }
 
-void RVSSVM_STATIC::Decode() {
+void RVSSVM_DYNAMIC::Decode() {
     control_unit_.SetControlSignals(IF_ID.readInstruction());
     uint32_t currentInstruction = IF_ID.readInstruction();
     uint8_t rs1 = (currentInstruction >> 15) & 0b11111;
@@ -307,11 +334,28 @@ void RVSSVM_STATIC::Decode() {
         if (opcode==get_instr_encoding(Instruction::kjalr).opcode || opcode==get_instr_encoding(Instruction::kjal).opcode){
             return_address_ = IF_ID.readProgramCounter()+4;
             next_pc_ = IF_ID.readProgramCounter()+4;
-            branchTaken=true;
-            if(opcode==get_instr_encoding(Instruction::kjalr).opcode){
-                targetImm = -(program_counter_ - 4) + (execution_result_);
+            if(branchHistory.find(IF_ID.readProgramCounter()) != branchHistory.end()){
+                if(opcode == get_instr_encoding(Instruction::kjalr).opcode){
+                    correctPC = (execution_result_);
+                    branchHistory[IF_ID.readProgramCounter()]= {1,correctPC};
+                    flush = true;
+                }
+                else{
+                    flush = false;
+                }
+                // flush = false;
             }
-            else targetImm = imm;
+            else {
+                if(opcode==get_instr_encoding(Instruction::kjalr).opcode){
+                    correctPC = (execution_result_);
+                    branchHistory[IF_ID.readProgramCounter()]= {1,correctPC};
+                }
+                else{
+                    branchHistory[IF_ID.readProgramCounter()]={1, IF_ID.readProgramCounter()+imm};
+                    correctPC = imm+IF_ID.readProgramCounter();
+                }
+                flush=true;
+            }
             execution_result_ = next_pc_;
         }
         else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
@@ -346,8 +390,33 @@ void RVSSVM_STATIC::Decode() {
                 break;
                 }
             }
+            if(branchHistory.find(IF_ID.readProgramCounter()) != branchHistory.end() && opcode == 0b1100011){
+                if(branchHistory[IF_ID.readProgramCounter()][0] == branch_flag_)flush=false;
+                else{
+                    flush=true;
+                    if(branch_flag_ == 1){
+                        branchHistory[IF_ID.readProgramCounter()] = {1,IF_ID.readProgramCounter() + imm};
+                        correctPC = imm+IF_ID.readProgramCounter();
+                    }
+                    else{
+                        branchHistory[IF_ID.readProgramCounter()] = {0,IF_ID.readProgramCounter()+4};
+                        correctPC = IF_ID.readProgramCounter()+4;
+                    }
+                }
+            }
+            else if(opcode == 0b1100011){
+                if(branch_flag_ == 1){
+                    branchHistory[IF_ID.readProgramCounter()] = {1,imm+IF_ID.readProgramCounter()};
+                    correctPC = imm+IF_ID.readProgramCounter();
+                    flush = true;
+                }
+                else{
+                    branchHistory[IF_ID.readProgramCounter()] = {0,IF_ID.readProgramCounter()+imm};
+                    correctPC = IF_ID.readProgramCounter()+4;
+                    flush = false;
+                }
+            }
         }
-        if (branch_flag_ && opcode==0b1100011){targetImm = imm;branchTaken=true;}
     }
 
     ID_EX.modifyReadData1(reg1_value);
@@ -369,12 +438,12 @@ void RVSSVM_STATIC::Decode() {
     ID_EX.modifyRs1(rs1);
     ID_EX.modifyRs2(rs2);
     ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
-    ID_EX.modifyNextPC(next_pc_);
     ID_EX.modifyProgramCounter(IF_ID.readProgramCounter());
+    ID_EX.modifyNextPC(next_pc_);
     ID_EX.modifyExecutionResult(execution_result_);
 }
 
-void RVSSVM_STATIC::Execute() {
+void RVSSVM_DYNAMIC::Execute() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
 
@@ -502,7 +571,7 @@ void RVSSVM_STATIC::Execute() {
     if(EX_MEM.readIsBranch())EX_MEM.modifyExecutionResult(ID_EX.readExecutionResult());
 }
 
-void RVSSVM_STATIC::ExecuteFloat() {
+void RVSSVM_DYNAMIC::ExecuteFloat() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -569,7 +638,7 @@ void RVSSVM_STATIC::ExecuteFloat() {
     registers_.WriteCsr(0x003, fcsr_status);
 }
 
-void RVSSVM_STATIC::ExecuteDouble() {
+void RVSSVM_DYNAMIC::ExecuteDouble() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
     uint8_t funct7 = ID_EX.readFunct7();
@@ -631,7 +700,7 @@ void RVSSVM_STATIC::ExecuteDouble() {
     EX_MEM.modifyNextPC(ID_EX.readNextPC());
 }
 
-void RVSSVM_STATIC::ExecuteCsr() {
+void RVSSVM_DYNAMIC::ExecuteCsr() {
     uint8_t rs1 = (current_instruction_ >> 15) & 0b11111;
     uint16_t csr = (current_instruction_ >> 20) & 0xFFF;
     uint64_t csr_val = registers_.ReadCsr(csr);
@@ -643,7 +712,7 @@ void RVSSVM_STATIC::ExecuteCsr() {
 }
 
 // TODO: implement writeback for syscalls
-void RVSSVM_STATIC::HandleSyscall() {
+void RVSSVM_DYNAMIC::HandleSyscall() {
     uint64_t syscall_number = registers_.ReadGpr(17);
     switch (syscall_number) {
         case SYSCALL_PRINT_INT: {
@@ -816,7 +885,7 @@ void RVSSVM_STATIC::HandleSyscall() {
     }
 }
 
-void RVSSVM_STATIC::WriteMemory() {
+void RVSSVM_DYNAMIC::WriteMemory() {
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
     uint8_t funct3 = EX_MEM.readFunct3();
@@ -945,7 +1014,7 @@ void RVSSVM_STATIC::WriteMemory() {
     }
 }
 
-void RVSSVM_STATIC::WriteMemoryFloat() {
+void RVSSVM_DYNAMIC::WriteMemoryFloat() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) { // FLW
@@ -993,7 +1062,7 @@ void RVSSVM_STATIC::WriteMemoryFloat() {
     MEM_WB.modifyNextPC(EX_MEM.readNextPC());
 }
 
-void RVSSVM_STATIC::WriteMemoryDouble() {
+void RVSSVM_DYNAMIC::WriteMemoryDouble() {
     uint8_t rs2 = EX_MEM.readRs2();
 
     if (EX_MEM.MemRead()) {// FLD
@@ -1039,7 +1108,7 @@ void RVSSVM_STATIC::WriteMemoryDouble() {
     MEM_WB.modifyNextPC(EX_MEM.readNextPC());
 }
 
-void RVSSVM_STATIC::WriteBack() {
+void RVSSVM_DYNAMIC::WriteBack() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
     uint8_t rd = MEM_WB.readRd();
@@ -1108,7 +1177,7 @@ void RVSSVM_STATIC::WriteBack() {
 
 }
 
-void RVSSVM_STATIC::WriteBackFloat() {
+void RVSSVM_DYNAMIC::WriteBackFloat() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -1183,7 +1252,7 @@ void RVSSVM_STATIC::WriteBackFloat() {
     }
 }
 
-void RVSSVM_STATIC::WriteBackDouble() {
+void RVSSVM_DYNAMIC::WriteBackDouble() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
     uint8_t rd = MEM_WB.readRd();
@@ -1225,7 +1294,7 @@ void RVSSVM_STATIC::WriteBackDouble() {
     return;
 }
 
-void RVSSVM_STATIC::WriteBackCsr() {
+void RVSSVM_DYNAMIC::WriteBackCsr() {
     uint8_t rd = (current_instruction_ >> 7) & 0b11111;
     uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
 
@@ -1272,7 +1341,7 @@ void RVSSVM_STATIC::WriteBackCsr() {
 
 }
 
-void RVSSVM_STATIC::Run() {
+void RVSSVM_DYNAMIC::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
@@ -1289,9 +1358,9 @@ void RVSSVM_STATIC::Run() {
             if(!DStall){
                 Decode();
                 Fetch();
-                if(branchTaken){
-                    UpdateProgramCounter(-8);
-                    UpdateProgramCounter(targetImm);
+                if(flush){
+                    UpdateProgramCounter(-program_counter_);
+                    UpdateProgramCounter(correctPC);
                     IF_ID.fetchInstruction(0);NumStalls++;
                 }
             }
@@ -1313,10 +1382,12 @@ void RVSSVM_STATIC::Run() {
         cycle_s_++;
     }
     while(!checkProcessOver()){
+        if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();
         DecodeHazard();
+
         WriteBack();
         WriteMemory();
         if(!stall){
@@ -1324,9 +1395,9 @@ void RVSSVM_STATIC::Run() {
             if(!DStall){
                 Decode();
                 Fetch();
-                if(branchTaken){
-                    UpdateProgramCounter(-8);
-                    UpdateProgramCounter(targetImm);
+                if(flush){
+                    UpdateProgramCounter(-program_counter_);
+                    UpdateProgramCounter(correctPC);
                     IF_ID.fetchInstruction(0);NumStalls++;
                 }
             }
@@ -1376,7 +1447,7 @@ void RVSSVM_STATIC::Run() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_STATIC::DebugRun() {
+void RVSSVM_DYNAMIC::DebugRun() {
     ClearStop();
     uint64_t instruction_executed = 0;
     while (!stop_requested_ && program_counter_ < program_size_) {
@@ -1392,7 +1463,6 @@ void RVSSVM_STATIC::DebugRun() {
         instructions_retired_++;
         instruction_executed++;
         cycle_s_++;
-        std::cout << "Program Counter: " << program_counter_ << std::endl;
 
         current_delta_.new_pc = program_counter_;
         // history_.push(current_delta_);
@@ -1428,7 +1498,7 @@ void RVSSVM_STATIC::DebugRun() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_STATIC::Step() {
+void RVSSVM_DYNAMIC::Step() {
     current_delta_.old_pc = program_counter_;
     current_delta_.pipeLineSnapShot.old_IF_ID = IF_ID;
     current_delta_.pipeLineSnapShot.old_ID_EX = ID_EX;
@@ -1440,6 +1510,7 @@ void RVSSVM_STATIC::Step() {
         HazardDetectionUnit();
         ForwardUnit();
         DecodeHazard();
+
         WriteBack();
         WriteMemory();
         if(!stall){
@@ -1447,9 +1518,9 @@ void RVSSVM_STATIC::Step() {
             if(!DStall){
                 Decode();
                 Fetch();
-                if(branchTaken){
-                    UpdateProgramCounter(-8);
-                    UpdateProgramCounter(targetImm);
+                if(flush){
+                    UpdateProgramCounter(-program_counter_);
+                    UpdateProgramCounter(correctPC);
                     IF_ID.fetchInstruction(0);NumStalls++;
                 }
             }
@@ -1492,8 +1563,6 @@ void RVSSVM_STATIC::Step() {
             }
         }
 
-        // history_.push(current_delta_);
-
         undo_stack_.push(current_delta_);
         while (!redo_stack_.empty()) {
         redo_stack_.pop();
@@ -1518,7 +1587,7 @@ void RVSSVM_STATIC::Step() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_STATIC::Undo() {
+void RVSSVM_DYNAMIC::Undo() {
     if (undo_stack_.empty()) {
         std::cout << "VM_NO_MORE_UNDO" << std::endl;
         output_status_ = "VM_NO_MORE_UNDO";
@@ -1595,7 +1664,7 @@ void RVSSVM_STATIC::Undo() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
-void RVSSVM_STATIC::Redo() {
+void RVSSVM_DYNAMIC::Redo() {
     if (redo_stack_.empty()) {
         std::cout << "VM_NO_MORE_REDO" << std::endl;
         return;
@@ -1666,7 +1735,7 @@ void RVSSVM_STATIC::Redo() {
 
 }
 
-void RVSSVM_STATIC::Reset() {
+void RVSSVM_DYNAMIC::Reset() {
     program_counter_ = 0;
     instructions_retired_ = 0;
     cycle_s_ = 0;

@@ -14,6 +14,7 @@
 #include "vm/rvss/pipelined_rvss_vm.h"
 #include "vm/rvss/rvss_vm.h"
 #include "vm/rvss/static_branch_pipelined_rvss_vm.h"
+#include "vm/rvss/dynamic_branch_pipelined_rvss_vm.h"
 #include "config.h"
 #include "vm_asm_mw.h"
 

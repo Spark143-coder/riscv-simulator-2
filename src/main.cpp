@@ -5,9 +5,9 @@
 #include "vm/rvss/rvss_vm.h"
 #include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
 #include "vm/rvss/forwarding_pipelined_rvss_vm.h"
-#include "vm/rvss/hazard_detection_pipelined_rvss_vm_2.h"
 #include "vm/rvss/pipelined_rvss_vm.h"
 #include "vm/rvss/static_branch_pipelined_rvss_vm.h"
+#include "vm/rvss/dynamic_branch_pipelined_rvss_vm.h"
 #include "vm_runner.h"
 #include "command_handler.h"
 #include "config.h"
@@ -66,6 +66,7 @@ int main(int argc, char *argv[]) {
             std::cout<<"3: Pipelined processor with hazard detection but no forwarding\n";
             std::cout<<"4: Pipelined processor with hazard detection and forwarding\n";
             std::cout<<"5: Pipelined processor with static branch prediction\n";
+            std::cout<<"6: Pipelined processor with 1 bit dynamic branch prediction\n";
             VmBase* vm;
             while(1){
               std::cin>>mode;
@@ -83,6 +84,9 @@ int main(int argc, char *argv[]) {
               }
               else if(mode==5){
                 vm = new RVSSVM_STATIC();break;
+              }
+              else if(mode==6){
+                vm = new RVSSVM_DYNAMIC();break;
               }
               else{
                 std::cout<<"Not a mode configuration\nEnter the correct mode\n";
@@ -135,6 +139,9 @@ int main(int argc, char *argv[]) {
   }
   else if(mode==5){
     vm = new RVSSVM_STATIC();
+  }
+  else if(mode==6){
+    vm = new RVSSVM_DYNAMIC();
   }
   // try {
   //   program = assemble("/home/vis/Desk/codes/assembler/examples/ntest1.s");

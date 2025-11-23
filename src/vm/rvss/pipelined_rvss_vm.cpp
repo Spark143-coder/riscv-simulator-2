@@ -943,7 +943,7 @@ void RVSSVM_PIPE::Run() {
     uint64_t instruction_executed = 0;
 
     while (!stop_requested_ && program_counter_ < program_size_) {
-        if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
+        if (instruction_executed > vm_config::config.getInstructionExecutionLimit() || cycle_s_ >= 100000)break;
         WriteBack();
         WriteMemory();
         Execute();

@@ -1123,7 +1123,7 @@ void RVSSVM_FORWARD::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
     while (!stop_requested_ && program_counter_ < program_size_ ) {
-        if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
+        if (instruction_executed > vm_config::config.getInstructionExecutionLimit() || cycle_s_ >= 100000)break;
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();
@@ -1162,7 +1162,7 @@ void RVSSVM_FORWARD::Run() {
 
     }
     while(!checkProcessOver()){
-        if (instruction_executed > vm_config::config.getInstructionExecutionLimit())break;
+        if (instruction_executed > vm_config::config.getInstructionExecutionLimit() || cycle_s_ >= 100000)break;
         initializeForwardControlSignals();
         HazardDetectionUnit();
         ForwardUnit();

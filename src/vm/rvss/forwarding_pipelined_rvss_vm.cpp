@@ -339,7 +339,7 @@ void RVSSVM_FORWARD::Execute() {
 
     }
 
-    if (branch_flag_ && opcode==0b1100011) {
+    if (branch_flag_ && opcode==0b1100011 && ID_EX.readIsBranch()) {
         UpdateProgramCounter(-4);
         UpdateProgramCounter(imm);
     }

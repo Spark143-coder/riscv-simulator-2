@@ -343,7 +343,6 @@ void RVSSVM_DYNAMIC::Decode() {
                 else{
                     flush = false;
                 }
-                // flush = false;
             }
             else {
                 if(opcode==get_instr_encoding(Instruction::kjalr).opcode){

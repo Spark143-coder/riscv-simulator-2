@@ -1252,7 +1252,7 @@ void RVSSVM_PIPE::Redo() {
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
     undo_stack_.push(next);
-
+    std::cout<<"VM_REDO_COMPLETED\n";
 }
 
 void RVSSVM_PIPE::Reset() {

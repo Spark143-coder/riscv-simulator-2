@@ -16,6 +16,9 @@
 #include <thread>
 #include <bitset>
 #include <regex>
+#include <fstream>
+#include <string>
+#include <iostream>
 
 
 
@@ -24,7 +27,7 @@ int main(int argc, char *argv[]) {
     std::cerr << "No arguments provided. Use --help for usage information.\n";
     return 1;
   }
-  uint mode;
+  uint mode = 1; //Default to single cycle
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
 
@@ -60,37 +63,63 @@ int main(int argc, char *argv[]) {
         }
         try {
             AssembledProgram program = assemble(argv[i]);
-            std::cout<<"Enter the configuration of the RISC-V Processor\n";
-            std::cout<<"1: Single cycle processor\n";
-            std::cout<<"2: Pipelined processor without hazard detection\n";
-            std::cout<<"3: Pipelined processor with hazard detection but no forwarding\n";
-            std::cout<<"4: Pipelined processor with hazard detection and forwarding\n";
-            std::cout<<"5: Pipelined processor with static branch prediction\n";
-            std::cout<<"6: Pipelined processor with 1 bit dynamic branch prediction\n";
             VmBase* vm;
-            while(1){
-              std::cin>>mode;
-              if(mode==1){
-                vm = new RVSSVM();break;
+            std::ifstream file("../src/configMode.ini");
+            
+            if(!file.is_open()) {
+                std::cerr << "Warning: configMode.ini not found or inaccessible. Using default mode 1.\n";
+            }
+            else{
+                std::string line;
+                while (std::getline(file, line)) {
+                  // Trim whitespace
+                  line.erase(0, line.find_first_not_of(" \t\r\n"));
+                  if (line.empty() || line[0] == '#') continue;
+
+                  // Remove comments
+                  auto posComment = line.find('#');
+                  if (posComment != std::string::npos)
+                      line = line.substr(0, posComment);
+
+                  // Match mode=
+                  auto pos = line.find("mode");
+                  if (pos == std::string::npos) continue;
+
+                  auto eq = line.find('=');
+                  if (eq == std::string::npos) continue;
+
+                  std::string val = line.substr(eq + 1);
+                  val.erase(0, val.find_first_not_of(" \t\r\n"));
+                  val.erase(val.find_last_not_of(" \t\r\n") + 1);
+
+                  try {
+                      mode = std::stoi(val);break;
+                  } catch (...) {
+                      mode = 1;
+                  }
               }
-              else if(mode==2){
-                vm = new RVSSVM_PIPE();break;
-              }
-              else if(mode==3){
-                vm = new RVSSVM_HAZARD();break;
-              }
-              else if(mode==4){
-                vm = new RVSSVM_FORWARD();break;
-              }
-              else if(mode==5){
-                vm = new RVSSVM_STATIC();break;
-              }
-              else if(mode==6){
-                vm = new RVSSVM_DYNAMIC();break;
-              }
-              else{
-                std::cout<<"Not a mode configuration\nEnter the correct mode\n";
-              }
+            }
+            std::cout<<"mode: "<<mode<<std::endl;
+            if(mode==1){
+              vm = new RVSSVM();
+            }
+            else if(mode==2){
+              vm = new RVSSVM_PIPE();
+            }
+            else if(mode==3){
+              vm = new RVSSVM_HAZARD();
+            }
+            else if(mode==4){
+              vm = new RVSSVM_FORWARD();
+            }
+            else if(mode==5){
+              vm = new RVSSVM_STATIC();
+            }
+            else if(mode==6){
+              vm = new RVSSVM_DYNAMIC();
+            }
+            else{
+              vm = new RVSSVM();
             }
             vm->LoadProgram(program);
             vm->Run();
@@ -125,76 +154,66 @@ int main(int argc, char *argv[]) {
 
   AssembledProgram program;
   VmBase* vm;
-  if(mode==1){
-    vm = new RVSSVM();
-  }
-  else if(mode==2){
-    vm = new RVSSVM_PIPE();
-  }
-  else if(mode==3){
-    vm = new RVSSVM_HAZARD();
-  }
-  else if(mode==4){
-    vm = new RVSSVM_FORWARD();
-  }
-  else if(mode==5){
-    vm = new RVSSVM_STATIC();
-  }
-  else if(mode==6){
-    vm = new RVSSVM_DYNAMIC();
-  }
-  // try {
-  //   program = assemble("/home/vis/Desk/codes/assembler/examples/ntest1.s");
-  // } catch (const std::runtime_error &e) {
-  //   std::cerr << e.what() << '\n';
-  //   return 0;
-  // }
-
-  // std::cout << "Program: " << program.filename << std::endl;
-
-  // unsigned int count = 0;
-  // for (const uint32_t &instruction : program.text_buffer) {
-  //     std::cout << std::bitset<32>(instruction)
-  //               << " | "
-  //               << std::setw(8) << std::setfill('0') << std::hex << instruction
-  //               << " | "
-  //               << std::setw(0) << count
-  //               << std::dec << "\n";
-  //     count += 4;
-  // }
-
-  // vm.LoadProgram(program);
   
 
   std::cout << "VM_STARTED" << std::endl;
-  // std::cout << globals::invokation_path << std::endl;
-  std::cout<<"Enter the configuration of the RISC-V Processor\n";
-  std::cout<<"1: Single cycle processor\n";
-  std::cout<<"2: Pipelined processor without hazard detection\n";
-  std::cout<<"3: Pipelined processor with hazard detection but no forwarding\n";
-  std::cout<<"4: Pipelined processor with hazard detection and forwarding\n";
-  std::cout<<"5: Pipelined processor with static branch prediction\n";
-  while(1){
-    std::cin>>mode;
-    if(mode==1){
-      vm = new RVSSVM();break;
-    }
-    else if(mode==2){
-      vm = new RVSSVM_PIPE();break;
-    }
-    else if(mode==3){
-      vm = new RVSSVM_HAZARD();break;
-    }
-    else if(mode==4){
-      vm = new RVSSVM_FORWARD();break;
-    }
-    else if(mode==5){
-      vm = new RVSSVM_STATIC();break;
-    }
-    else{
-      std::cout<<"Not a mode configuration\nEnter the correct mode\n";
+
+  std::ifstream file("../src/configMode.ini");
+            
+  if(!file.is_open()) {
+      std::cerr << "Warning: configMode.ini not found or inaccessible. Using default mode 1.\n";
+  }
+  else{
+      std::string line;
+      while (std::getline(file, line)) {
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        if (line.empty() || line[0] == '#') continue;
+
+        // Remove comments
+        auto posComment = line.find('#');
+        if (posComment != std::string::npos)
+            line = line.substr(0, posComment);
+
+        // Match mode=
+        auto pos = line.find("mode");
+        if (pos == std::string::npos) continue;
+
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+
+        std::string val = line.substr(eq + 1);
+        val.erase(0, val.find_first_not_of(" \t\r\n"));
+        val.erase(val.find_last_not_of(" \t\r\n") + 1);
+
+        try {
+            mode = std::stoi(val);break;
+        } catch (...) {
+            mode = 1;
+        }
     }
   }
+    if(mode==1){
+      vm = new RVSSVM();
+    }
+    else if(mode==2){
+      vm = new RVSSVM_PIPE();
+    }
+    else if(mode==3){
+      vm = new RVSSVM_HAZARD();
+    }
+    else if(mode==4){
+      vm = new RVSSVM_FORWARD();
+    }
+    else if(mode==5){
+      vm = new RVSSVM_STATIC();
+    }
+    else if(mode==6){
+      vm = new RVSSVM_DYNAMIC();
+    }
+    else{
+      vm = new RVSSVM();
+    }
   std::thread vm_thread;
   bool vm_running = false;
 
@@ -209,9 +228,6 @@ int main(int argc, char *argv[]) {
       vm_running = false;
     });
   };
-
-
-
 
   std::string command_buffer;
   while (true) {

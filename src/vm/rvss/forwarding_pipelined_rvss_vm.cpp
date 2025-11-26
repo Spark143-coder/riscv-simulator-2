@@ -1517,7 +1517,7 @@ void RVSSVM_FORWARD::Redo() {
     }
     DumpRegisters(globals::registers_dump_file_path, registers_);
     DumpState(globals::vm_state_dump_file_path);
-    std::cout << "Program Counter: " << program_counter_ << std::endl;
+    std::cout<<"VM_REDO_COMPLETED\n";
     undo_stack_.push(next);
 
 }

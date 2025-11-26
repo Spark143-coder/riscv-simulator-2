@@ -99,7 +99,6 @@ int main(int argc, char *argv[]) {
                   }
               }
             }
-            std::cout<<"mode: "<<mode<<std::endl;
             if(mode==1){
               vm = new RVSSVM();
             }

@@ -1,8 +1,3 @@
-/**
- * @file control_unit_base.h
- * @brief Control unit base class definition
- * @author Vishank Singh, https://github.com/VishankSingh
- */
 #ifndef CONTROL_UNIT_BASE_H
 #define CONTROL_UNIT_BASE_H
 

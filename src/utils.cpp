@@ -1,8 +1,4 @@
-/**
- * @file utils.cpp
- * @brief Contains utility functions for the VM.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
+
 
 
 #include "utils.h"
@@ -17,14 +13,12 @@
 #include <fstream>
 
 void setupVmStateDirectory() {
-  // std::filesystem::path vm_state_dir = std::filesystem::path(".") / "vm_state";
+
   if (!std::filesystem::exists(globals::vm_state_directory)) {
     std::filesystem::create_directories(globals::vm_state_directory);
   }
 
-  // std::filesystem::path registers_file = vm_state_dir / "registers_dump.json";
-  // std::filesystem::path errors_file = vm_state_dir / "errors_dump.json";
-  // std::filesystem::path vm_state_dump_file_path = vm_state_dir / "vm_state_dump.json";
+
 
   if (!std::filesystem::exists(globals::registers_dump_file_path)) {
     std::ofstream(globals::registers_dump_file_path).close();

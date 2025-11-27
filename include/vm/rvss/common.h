@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "vm/pipelineRegisters.h"
 
+//This structures common to every mode
+
 struct RegisterChange {
     unsigned int reg_index;
     unsigned int reg_type; // 0 for GPR, 1 for CSR, 2 for FPR

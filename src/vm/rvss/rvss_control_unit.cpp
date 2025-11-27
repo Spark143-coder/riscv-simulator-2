@@ -1,9 +1,3 @@
-/**
- * @file rvss_control_unit.cpp
- * @brief RVSS Control Unit implementation
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #include "vm/rvss/rvss_control_unit.h"
 #include "vm/alu.h"
 
@@ -28,7 +22,7 @@ void RVSSControlUnit::SetControlSignals(uint32_t instruction) {
         alu_op_ = true;
         break;
         }
-        case 0b0000011: 
+        case 0b0000011:
         
         
         {// Load instructions (LB, LH, LW, LD)

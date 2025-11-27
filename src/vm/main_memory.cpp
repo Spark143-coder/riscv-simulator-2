@@ -1,9 +1,3 @@
-/**
- * @file main_memory.cpp
- * @brief Contains the implementation of the Memory class.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #include "vm/main_memory.h"
 #include "globals.h"
 
@@ -252,7 +246,7 @@ void Memory::GetMemoryPoint(std::string addr_str) {
     throw std::out_of_range("Memory address out of range: " + std::to_string(address));
   }
 
-  uint64_t value = ReadDoubleWord(address); 
+  uint64_t value = ReadDoubleWord(address);
   // std::stringstream ss;
   std::cerr << "VM_MEMORY_POINT_START";
   std::cerr << addr_str;

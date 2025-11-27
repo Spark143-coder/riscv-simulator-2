@@ -1,9 +1,3 @@
-/**
- * @file rvss_vm.cpp
- * @brief RVSS VM implementation
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #include "vm/rvss/rvss_vm.h"
 
 #include "utils.h"
@@ -34,15 +28,18 @@ RVSSVM::RVSSVM() : VmBase() {
 
 RVSSVM::~RVSSVM() = default;
 
+//The first stage IF: Instruction fetch
 void RVSSVM::Fetch() {
   current_instruction_ = memory_controller_.ReadWord(program_counter_);
   UpdateProgramCounter(4);
 }
 
+//The second stage ID: Instruction decode
 void RVSSVM::Decode() {
   control_unit_.SetControlSignals(current_instruction_);
 }
 
+//The third stage EX: execute stage
 void RVSSVM::Execute() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
@@ -145,6 +142,7 @@ void RVSSVM::Execute() {
   }
 }
 
+//The third stage EX: Float execute
 void RVSSVM::ExecuteFloat() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
@@ -177,12 +175,12 @@ void RVSSVM::ExecuteFloat() {
   alu::AluOp aluOperation = control_unit_.GetAluSignal(current_instruction_, control_unit_.GetAluOp());
   std::tie(execution_result_, fcsr_status) = alu::Alu::fpexecute(aluOperation, reg1_value, reg2_value, reg3_value, rm);
 
-  // std::cout << "+++++ Float execution result: " << execution_result_ << std::endl;
 
 
   registers_.WriteCsr(0x003, fcsr_status);
 }
 
+//The third stage EX: double execute
 void RVSSVM::ExecuteDouble() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
@@ -397,6 +395,7 @@ void RVSSVM::HandleSyscall() {
   }
 }
 
+//The fourth stage MEM: Memory access
 void RVSSVM::WriteMemory() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
@@ -508,14 +507,13 @@ void RVSSVM::WriteMemory() {
   }
 }
 
+//The fourth stage MEM: Memory access float
 void RVSSVM::WriteMemoryFloat() {
   uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
 
   if (control_unit_.GetMemRead()) { // FLW
     memory_result_ = memory_controller_.ReadWord(execution_result_);
   }
-
-  // std::cout << "+++++ Memory result: " << memory_result_ << std::endl;
 
   uint64_t addr = 0;
   std::vector<uint8_t> old_bytes_vec;
@@ -539,6 +537,7 @@ void RVSSVM::WriteMemoryFloat() {
   }
 }
 
+//The fourth stage MEM: Memory access double
 void RVSSVM::WriteMemoryDouble() {
   uint8_t rs2 = (current_instruction_ >> 20) & 0b11111;
 
@@ -566,6 +565,7 @@ void RVSSVM::WriteMemoryDouble() {
   }
 }
 
+//The fifth stage WB: Writeback stage
 void RVSSVM::WriteBack() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t funct3 = (current_instruction_ >> 12) & 0b111;
@@ -619,11 +619,10 @@ void RVSSVM::WriteBack() {
   }
 
   if (opcode==get_instr_encoding(Instruction::kjal).opcode) /* JAL */ {
-    // Updated in Execute()
+    
   }
   if (opcode==get_instr_encoding(Instruction::kjalr).opcode) /* JALR */ {
-    // registers_.WriteGpr(rd, return_address_); // Write back to rs1
-    // Updated in Execute()
+    
   }
 
   uint64_t new_reg = registers_.ReadGpr(rd);
@@ -633,6 +632,7 @@ void RVSSVM::WriteBack() {
 
 }
 
+//The fifth stage WB: Write back float
 void RVSSVM::WriteBackFloat() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
@@ -679,28 +679,7 @@ void RVSSVM::WriteBackFloat() {
       }
     }
 
-    // // write to GPR
-    // if (funct7==0b1010000
-    //     || funct7==0b1100000
-    //     || funct7==0b1110000) { // f(eq|lt|le).s, fcvt.(w|wu|l|lu).s
-    //   old_reg = registers_.ReadGpr(rd);
-    //   registers_.WriteGpr(rd, execution_result_);
-    //   new_reg = execution_result_;
-    //   reg_type = 0; // GPR
-
-    // }
-    // // write to FPR
-    // else if (opcode==get_instr_encoding(Instruction::kflw).opcode) {
-    //   old_reg = registers_.ReadFpr(rd);
-    //   registers_.WriteFpr(rd, memory_result_);
-    //   new_reg = memory_result_;
-    //   reg_type = 2; // FPR
-    // } else {
-    //   old_reg = registers_.ReadFpr(rd);
-    //   registers_.WriteFpr(rd, execution_result_);
-    //   new_reg = execution_result_;
-    //   reg_type = 2; // FPR
-    // }
+    
   }
 
   if (old_reg!=new_reg) {
@@ -708,6 +687,7 @@ void RVSSVM::WriteBackFloat() {
   }
 }
 
+//The fifth stage WB: Write back double
 void RVSSVM::WriteBackDouble() {
   uint8_t opcode = current_instruction_ & 0b1111111;
   uint8_t funct7 = (current_instruction_ >> 25) & 0b1111111;
@@ -796,10 +776,12 @@ void RVSSVM::WriteBackCsr() {
 
 }
 
+//The run function
 void RVSSVM::Run() {
   ClearStop();
   uint64_t instruction_executed = 0;
 
+  //The calling of stages
   while (!stop_requested_ && program_counter_ < program_size_) {
     if (instruction_executed > vm_config::config.getInstructionExecutionLimit())
       break;
@@ -895,6 +877,7 @@ void RVSSVM::DebugRun() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
+//The step function
 void RVSSVM::Step() {
   current_delta_.old_pc = program_counter_;
   if (program_counter_ < program_size_) {
@@ -935,6 +918,7 @@ void RVSSVM::Step() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
+//The undo step
 void RVSSVM::Undo() {
   if (undo_stack_.empty()) {
     std::cout << "VM_NO_MORE_UNDO" << std::endl;
@@ -945,12 +929,6 @@ void RVSSVM::Undo() {
   StepDelta last = undo_stack_.top();
   undo_stack_.pop();
 
-  // if (!history_.can_undo()) {
-  //     std::cout << "Nothing to undo.\n";
-  //     return;
-  // }
-
-  // StepDelta last = history_.undo();
 
   for (const auto &change : last.register_changes) {
     switch (change.reg_type) {
@@ -991,6 +969,7 @@ void RVSSVM::Undo() {
   DumpState(globals::vm_state_dump_file_path);
 }
 
+//The redo step
 void RVSSVM::Redo() {
   if (redo_stack_.empty()) {
     std::cout << "VM_NO_MORE_REDO" << std::endl;
@@ -1000,12 +979,6 @@ void RVSSVM::Redo() {
   StepDelta next = redo_stack_.top();
   redo_stack_.pop();
 
-  // if (!history_.can_redo()) {
-  //       std::cout << "Nothing to redo.\n";
-  //       return;
-  //   }
-
-  //   StepDelta next = history_.redo();
 
   for (const auto &change : next.register_changes) {
     switch (change.reg_type) {
@@ -1042,6 +1015,7 @@ void RVSSVM::Redo() {
 
 }
 
+//Reset
 void RVSSVM::Reset() {
   program_counter_ = 0;
   instructions_retired_ = 0;

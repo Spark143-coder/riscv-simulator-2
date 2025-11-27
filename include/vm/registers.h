@@ -1,9 +1,3 @@
-/**
- * @file registers.h
- * @brief Contains the definition of the RegisterFile class for managing registers in the simulator.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #ifndef REGISTERS_H
 #define REGISTERS_H
 

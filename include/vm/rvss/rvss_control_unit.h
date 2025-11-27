@@ -1,8 +1,3 @@
-/**
- * @file rvss_control_unit.h
- * @brief RVSS Control Unit
- * @author Vishank Singh, https://github.com/VishankSingh
- */
 #ifndef RVSS_CONTROL_UNIT_H
 #define RVSS_CONTROL_UNIT_H
 
@@ -17,4 +12,4 @@ class RVSSControlUnit : public ControlUnit {
 
 };
 
-#endif // RVSS_CONTROL_UNIT_H
+#endif

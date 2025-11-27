@@ -1,9 +1,3 @@
-/**
- * @file vm_asm_mw.h
- * @brief Contains functions to handle assembler input for the VM.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #ifndef VM_ASM_MW_H
 #define VM_ASM_MW_H
 
@@ -23,7 +17,6 @@ struct AssembledProgram {
 
   std::vector<std::pair<ICUnit, bool>> intermediate_code;
 
-  // std::vector<std::pair<std::string, SymbolData>> symbol_table;
   
 
   std::map<std::string, SymbolData> symbol_table;

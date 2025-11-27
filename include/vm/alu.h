@@ -1,8 +1,3 @@
-/**
- * @file alu.h
- * @brief Contains the definition of the alu class for performing arithmetic and logic operations.
- * @author Vishank Singh, httpa://github.com/VishankSingh
- */
 #ifndef ALU_H
 #define ALU_H
 
@@ -223,8 +218,6 @@ public:
      * @return A pair (result, overflow_flag).
      */
     [[nodiscard]] static std::pair<uint64_t, bool> execute(AluOp op, uint64_t a, uint64_t b) ;
-
-    // TODO: check all the floating point operations
 
     [[nodiscard]] static std::pair<uint64_t, uint8_t> fpexecute(AluOp op, uint64_t ina, uint64_t inb, uint64_t inc, uint8_t rm) ;
 

@@ -1,8 +1,3 @@
-/**
- * @file config.h
- * @brief Contains configuration options for the assembler.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
 #ifndef CONFIG_H
 #define CONFIG_H
 

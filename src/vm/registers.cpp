@@ -1,9 +1,3 @@
-/**
- * @file registers.cpp
- * @brief Contains the implementation of the RegisterFile class and related
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #include "vm/registers.h"
 
 #include <stdexcept>

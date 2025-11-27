@@ -1,9 +1,3 @@
-/**
- * @file memory_controller.h
- * @brief Contains the declaration of the MemoryController class for managing memory in the VM.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #ifndef MEMORY_CONTROLLER_H
 #define MEMORY_CONTROLLER_H
 

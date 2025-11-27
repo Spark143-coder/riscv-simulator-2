@@ -1,8 +1,3 @@
-/**
- * File Name: command_handler.h
- * Author: Vishank Singh
- * Github: https://github.com/VishankSingh
- */
 #ifndef COMMAND_HANDLER_H
 #define COMMAND_HANDLER_H
 

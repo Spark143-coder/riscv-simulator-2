@@ -1,9 +1,3 @@
-/**
- * @file rvss_vm.cpp
- * @brief RVSS VM implementation
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #include "vm/rvss/pipelined_rvss_vm.h"
 
 #include "utils.h"
@@ -32,6 +26,7 @@ RVSSVM_PIPE::RVSSVM_PIPE() : VmBase() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//it will check if all the instructions have been executed and the code is completed
 static bool checkProcessOver(){
     bool yes=true;
     if(IF_ID.readInstruction()!=0)yes=false;
@@ -43,12 +38,15 @@ static bool checkProcessOver(){
 
 RVSSVM_PIPE::~RVSSVM_PIPE() = default;
 
+//The first stage IF: Instruction fetch
 void RVSSVM_PIPE::Fetch() {
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
     IF_ID.fetchInstruction(current_instruction_);
+    IF_ID.modifyProgramCounter(program_counter_);
     UpdateProgramCounter(4);
 }
 
+//The second stage ID: Instruction decode
 void RVSSVM_PIPE::Decode() {
     control_unit_.SetControlSignals(IF_ID.readInstruction());
     uint32_t currentInstruction = IF_ID.readInstruction();
@@ -81,8 +79,10 @@ void RVSSVM_PIPE::Decode() {
     ID_EX.modifyRs1(rs1);
     ID_EX.modifyRs2(rs2);
     ID_EX.modifyRs3((currentInstruction >> 27) & 0b11111);
+    ID_EX.modifyProgramCounter(IF_ID.readProgramCounter());
 }
 
+//The third stage EX: execute stage
 void RVSSVM_PIPE::Execute() {
 
     uint8_t opcode = ID_EX.readOpcode();
@@ -141,14 +141,15 @@ void RVSSVM_PIPE::Execute() {
     if (ID_EX.readIsBranch()) {
         if (opcode==get_instr_encoding(Instruction::kjalr).opcode ||
             opcode==get_instr_encoding(Instruction::kjal).opcode) {
-        next_pc_ = static_cast<int64_t>(program_counter_); // PC was already updated in Fetch()
+        next_pc_ = static_cast<int64_t>(ID_EX.readProgramCounter())+4; // PC was already updated in Fetch()
         UpdateProgramCounter(-4);
-        return_address_ = program_counter_ + 4;
+        return_address_ = next_pc_;
         if (opcode==get_instr_encoding(Instruction::kjalr).opcode) {
             UpdateProgramCounter(-program_counter_ + (execution_result_));
         } else if (opcode==get_instr_encoding(Instruction::kjal).opcode) {
             UpdateProgramCounter(imm);
         }
+        execution_result_ = next_pc_;
         } else if (opcode==get_instr_encoding(Instruction::kbeq).opcode ||
                     opcode==get_instr_encoding(Instruction::kbne).opcode ||
                     opcode==get_instr_encoding(Instruction::kblt).opcode ||
@@ -197,9 +198,11 @@ void RVSSVM_PIPE::Execute() {
     if (opcode==get_instr_encoding(Instruction::kauipc).opcode) { // AUIPC
         execution_result_ = static_cast<int64_t>(program_counter_) - 4 + (imm << 12);
     }
+    EX_MEM.modifyNextPC(next_pc_);
     EX_MEM.modifyExecutionResult(execution_result_);
 }
 
+//The third stage EX: Float execute
 void RVSSVM_PIPE::ExecuteFloat() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
@@ -253,6 +256,7 @@ void RVSSVM_PIPE::ExecuteFloat() {
     registers_.WriteCsr(0x003, fcsr_status);
 }
 
+//The third stage EX: double execute
 void RVSSVM_PIPE::ExecuteDouble() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
@@ -484,6 +488,7 @@ void RVSSVM_PIPE::HandleSyscall() {
     }
 }
 
+//The fourth stage MEM: Memory access
 void RVSSVM_PIPE::WriteMemory() {
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
@@ -551,6 +556,7 @@ void RVSSVM_PIPE::WriteMemory() {
     MEM_WB.modifyFunct7(EX_MEM.readFunct7());
     MEM_WB.modifyRs1(EX_MEM.readRs1());
     MEM_WB.modifyRs3(EX_MEM.readRs3());
+    MEM_WB.modifyNextPC(EX_MEM.readNextPC());
     uint64_t addr = 0;
     std::vector<uint8_t> old_bytes_vec;
     std::vector<uint8_t> new_bytes_vec;
@@ -612,6 +618,7 @@ void RVSSVM_PIPE::WriteMemory() {
     }
 }
 
+//The fourth stage MEM: Memory access float
 void RVSSVM_PIPE::WriteMemoryFloat() {
     uint8_t rs2 = EX_MEM.readRs2();
 
@@ -631,7 +638,6 @@ void RVSSVM_PIPE::WriteMemoryFloat() {
         }
         uint32_t val = registers_.ReadFpr(rs2) & 0xFFFFFFFF;
         memory_controller_.WriteWord(execution_result_, val);
-        // new_bytes_vec.push_back(memory_controller_.ReadByte(addr));
         for (size_t i = 0; i < 4; ++i) {
         new_bytes_vec.push_back(memory_controller_.ReadByte(addr + i));
         }
@@ -658,8 +664,10 @@ void RVSSVM_PIPE::WriteMemoryFloat() {
     MEM_WB.modifyFunct7(EX_MEM.readFunct7());
     MEM_WB.modifyRs1(EX_MEM.readRs1());
     MEM_WB.modifyRs3(EX_MEM.readRs3());
+    MEM_WB.modifyNextPC(EX_MEM.readNextPC());
 }
 
+//The fourth stage MEM: Memory access double
 void RVSSVM_PIPE::WriteMemoryDouble() {
     uint8_t rs2 = EX_MEM.readRs2();
 
@@ -703,8 +711,10 @@ void RVSSVM_PIPE::WriteMemoryDouble() {
     MEM_WB.modifyFunct7(EX_MEM.readFunct7());
     MEM_WB.modifyRs1(EX_MEM.readRs1());
     MEM_WB.modifyRs3(EX_MEM.readRs3());
+    MEM_WB.modifyNextPC(EX_MEM.readNextPC());
 }
 
+//The fifth stage WB: Writeback stage
 void RVSSVM_PIPE::WriteBack() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
@@ -748,7 +758,7 @@ void RVSSVM_PIPE::WriteBack() {
         }
         case get_instr_encoding(Instruction::kjalr).opcode: /* JALR */
         case get_instr_encoding(Instruction::kjal).opcode: /* JAL */ {
-            registers_.WriteGpr(rd, next_pc_);
+            registers_.WriteGpr(rd, MEM_WB.readNextPC());
             break;
         }
         case get_instr_encoding(Instruction::klui).opcode: /* LUI */ {
@@ -760,11 +770,10 @@ void RVSSVM_PIPE::WriteBack() {
     }
 
     if (opcode==get_instr_encoding(Instruction::kjal).opcode) /* JAL */ {
-        // Updated in Execute()
+        registers_.WriteGpr(rd, MEM_WB.readNextPC());
     }
     if (opcode==get_instr_encoding(Instruction::kjalr).opcode) /* JALR */ {
-        // registers_.WriteGpr(rd, return_address_); // Write back to rs1
-        // Updated in Execute()
+        registers_.WriteGpr(rd, MEM_WB.readNextPC());
     }
 
     uint64_t new_reg = registers_.ReadGpr(rd);
@@ -774,6 +783,7 @@ void RVSSVM_PIPE::WriteBack() {
 
 }
 
+//The fifth stage WB: Write back float
 void RVSSVM_PIPE::WriteBackFloat() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
@@ -820,28 +830,6 @@ void RVSSVM_PIPE::WriteBackFloat() {
         }
         }
 
-        // // write to GPR
-        // if (funct7==0b1010000
-        //     || funct7==0b1100000
-        //     || funct7==0b1110000) { // f(eq|lt|le).s, fcvt.(w|wu|l|lu).s
-        //   old_reg = registers_.ReadGpr(rd);
-        //   registers_.WriteGpr(rd, execution_result_);
-        //   new_reg = execution_result_;
-        //   reg_type = 0; // GPR
-
-        // }
-        // // write to FPR
-        // else if (opcode==get_instr_encoding(Instruction::kflw).opcode) {
-        //   old_reg = registers_.ReadFpr(rd);
-        //   registers_.WriteFpr(rd, memory_result_);
-        //   new_reg = memory_result_;
-        //   reg_type = 2; // FPR
-        // } else {
-        //   old_reg = registers_.ReadFpr(rd);
-        //   registers_.WriteFpr(rd, execution_result_);
-        //   new_reg = execution_result_;
-        //   reg_type = 2; // FPR
-        // }
     }
 
     if (old_reg!=new_reg) {
@@ -849,6 +837,7 @@ void RVSSVM_PIPE::WriteBackFloat() {
     }
 }
 
+//The fifth stage WB: Write back double
 void RVSSVM_PIPE::WriteBackDouble() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
@@ -938,10 +927,12 @@ void RVSSVM_PIPE::WriteBackCsr() {
 
 }
 
+//The run function
 void RVSSVM_PIPE::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
 
+    //The calling of stages
     while (!stop_requested_ && program_counter_ < program_size_) {
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit() || cycle_s_ >= 100000)break;
         WriteBack();
@@ -995,6 +986,7 @@ void RVSSVM_PIPE::Run() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//NOT Implemented
 void RVSSVM_PIPE::DebugRun() {
     ClearStop();
     uint64_t instruction_executed = 0;
@@ -1013,7 +1005,7 @@ void RVSSVM_PIPE::DebugRun() {
         cycle_s_++;
 
         current_delta_.new_pc = program_counter_;
-        // history_.push(current_delta_);
+
         undo_stack_.push(current_delta_);
         while (!redo_stack_.empty()) {
             redo_stack_.pop();
@@ -1046,6 +1038,7 @@ void RVSSVM_PIPE::DebugRun() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//The step function
 void RVSSVM_PIPE::Step() {
     current_delta_.old_pc = program_counter_;
     current_delta_.pipeLineSnapShot.old_IF_ID = IF_ID;
@@ -1110,6 +1103,7 @@ void RVSSVM_PIPE::Step() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//The undo step
 void RVSSVM_PIPE::Undo() {
     if (undo_stack_.empty()) {
         std::cout << "VM_NO_MORE_UNDO" << std::endl;
@@ -1120,12 +1114,6 @@ void RVSSVM_PIPE::Undo() {
     StepDelta last = undo_stack_.top();
     undo_stack_.pop();
 
-    // if (!history_.can_undo()) {
-    //     std::cout << "Nothing to undo.\n";
-    //     return;
-    // }
-
-    // StepDelta last = history_.undo();
 
     for (const auto &change : last.register_changes) {
         switch (change.reg_type) {
@@ -1185,6 +1173,7 @@ void RVSSVM_PIPE::Undo() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//The redo step
 void RVSSVM_PIPE::Redo() {
     if (redo_stack_.empty()) {
         std::cout << "VM_NO_MORE_REDO" << std::endl;
@@ -1194,12 +1183,6 @@ void RVSSVM_PIPE::Redo() {
     StepDelta next = redo_stack_.top();
     redo_stack_.pop();
 
-    // if (!history_.can_redo()) {
-    //       std::cout << "Nothing to redo.\n";
-    //       return;
-    //   }
-
-    //   StepDelta next = history_.redo();
 
     for (const auto &change : next.register_changes) {
         switch (change.reg_type) {

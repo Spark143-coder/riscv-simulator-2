@@ -1,9 +1,3 @@
-/**
- * @file rvss_vm.cpp
- * @brief RVSS VM implementation
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #include "vm/rvss/hazard_detection_pipelined_rvss_vm.h"
 
 #include "utils.h"
@@ -27,12 +21,14 @@
 using instruction_set::Instruction;
 using instruction_set::get_instr_encoding;
 
+//Required variables for pipelining and branch prediction
 static uint ForwardA;
 static uint ForwardB;
 static uint ForwardC;
 static uint Branch;
 static int NumStalls = 0;
 
+//Initialize all the signals to zero
 static void initializeForwardControlSignals(){
     ForwardA = 0;
     ForwardB = 0;
@@ -40,6 +36,7 @@ static void initializeForwardControlSignals(){
     Branch = 0;
 }
 
+//it will check if all the instructions have been executed and the code is completed
 static bool checkProcessOver(){
     bool yes=true;
     if(IF_ID.readInstruction()!=0)yes=false;
@@ -49,6 +46,7 @@ static bool checkProcessOver(){
     return yes;
 }
 
+//It checks the various cases of Hazard
 static void HazardDetectionUnit(){
     if(!EX_MEM.readIsDouble() && !EX_MEM.readIsFloat() && !ID_EX.readIsFloat() && !ID_EX.readIsDouble()){
         if(EX_MEM.WriteBackSignal() && (EX_MEM.readRd()!=0) && EX_MEM.readRd()==ID_EX.readRs1())ForwardA=10;
@@ -132,6 +130,7 @@ RVSSVM_HAZARD::RVSSVM_HAZARD() : VmBase() {
 
 RVSSVM_HAZARD::~RVSSVM_HAZARD() = default;
 
+//The first stage IF: Instruction fetch
 void RVSSVM_HAZARD::Fetch() {
     current_instruction_ = memory_controller_.ReadWord(program_counter_);
     IF_ID.fetchInstruction(current_instruction_);
@@ -139,6 +138,7 @@ void RVSSVM_HAZARD::Fetch() {
     UpdateProgramCounter(4);
 }
 
+//The second stage ID: Instruction decode
 void RVSSVM_HAZARD::Decode() {
 
     control_unit_.SetControlSignals(IF_ID.readInstruction());
@@ -177,6 +177,7 @@ void RVSSVM_HAZARD::Decode() {
     ID_EX.modifyProgramCounter(IF_ID.readProgramCounter());
 }
 
+//The third stage EX: execute stage
 void RVSSVM_HAZARD::Execute() {
     
     uint8_t opcode = ID_EX.readOpcode();
@@ -298,6 +299,7 @@ void RVSSVM_HAZARD::Execute() {
     EX_MEM.modifyNextPC(next_pc_);
 }
 
+//The third stage EX: Float execute
 void RVSSVM_HAZARD::ExecuteFloat() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
@@ -351,6 +353,7 @@ void RVSSVM_HAZARD::ExecuteFloat() {
     registers_.WriteCsr(0x003, fcsr_status);
 }
 
+//The third stage EX: double execute
 void RVSSVM_HAZARD::ExecuteDouble() {
     uint8_t opcode = ID_EX.readOpcode();
     uint8_t funct3 = ID_EX.readFunct3();
@@ -582,6 +585,7 @@ void RVSSVM_HAZARD::HandleSyscall() {
     }
 }
 
+//The fourth stage MEM: Memory access
 void RVSSVM_HAZARD::WriteMemory() {
     uint8_t opcode = EX_MEM.readOpcode();
     uint8_t rs2 = EX_MEM.readRs2();
@@ -711,6 +715,7 @@ void RVSSVM_HAZARD::WriteMemory() {
     }
 }
 
+//The fourth stage MEM: Memory access float
 void RVSSVM_HAZARD::WriteMemoryFloat() {
     uint8_t rs2 = EX_MEM.readRs2();
 
@@ -760,6 +765,7 @@ void RVSSVM_HAZARD::WriteMemoryFloat() {
     MEM_WB.modifyNextPC(EX_MEM.readNextPC());
 }
 
+//The fourth stage MEM: Memory access double
 void RVSSVM_HAZARD::WriteMemoryDouble() {
     uint8_t rs2 = EX_MEM.readRs2();
 
@@ -806,6 +812,7 @@ void RVSSVM_HAZARD::WriteMemoryDouble() {
     MEM_WB.modifyNextPC(EX_MEM.readNextPC());
 }
 
+//The fifth stage WB: Writeback stage
 void RVSSVM_HAZARD::WriteBack() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct3 = MEM_WB.readOpcode();
@@ -861,11 +868,10 @@ void RVSSVM_HAZARD::WriteBack() {
     }
 
     if (opcode==get_instr_encoding(Instruction::kjal).opcode) /* JAL */ {
-        // Updated in Execute()
+        registers_.WriteGpr(rd, MEM_WB.readNextPC());
     }
     if (opcode==get_instr_encoding(Instruction::kjalr).opcode) /* JALR */ {
-        // registers_.WriteGpr(rd, return_address_); // Write back to rs1
-        // Updated in Execute()
+        registers_.WriteGpr(rd, MEM_WB.readNextPC());
     }
 
     uint64_t new_reg = registers_.ReadGpr(rd);
@@ -875,6 +881,7 @@ void RVSSVM_HAZARD::WriteBack() {
 
 }
 
+//The fifth stage WB: Write back float
 void RVSSVM_HAZARD::WriteBackFloat() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
@@ -921,28 +928,6 @@ void RVSSVM_HAZARD::WriteBackFloat() {
         }
         }
 
-        // // write to GPR
-        // if (funct7==0b1010000
-        //     || funct7==0b1100000
-        //     || funct7==0b1110000) { // f(eq|lt|le).s, fcvt.(w|wu|l|lu).s
-        //   old_reg = registers_.ReadGpr(rd);
-        //   registers_.WriteGpr(rd, execution_result_);
-        //   new_reg = execution_result_;
-        //   reg_type = 0; // GPR
-
-        // }
-        // // write to FPR
-        // else if (opcode==get_instr_encoding(Instruction::kflw).opcode) {
-        //   old_reg = registers_.ReadFpr(rd);
-        //   registers_.WriteFpr(rd, memory_result_);
-        //   new_reg = memory_result_;
-        //   reg_type = 2; // FPR
-        // } else {
-        //   old_reg = registers_.ReadFpr(rd);
-        //   registers_.WriteFpr(rd, execution_result_);
-        //   new_reg = execution_result_;
-        //   reg_type = 2; // FPR
-        // }
     }
 
     if (old_reg!=new_reg) {
@@ -950,6 +935,7 @@ void RVSSVM_HAZARD::WriteBackFloat() {
     }
 }
 
+//The fifth stage WB: Write back double
 void RVSSVM_HAZARD::WriteBackDouble() {
     uint8_t opcode = MEM_WB.readOpcode();
     uint8_t funct7 = MEM_WB.readFunct7();
@@ -1039,9 +1025,12 @@ void RVSSVM_HAZARD::WriteBackCsr() {
 
 }
 
+//The run function
 void RVSSVM_HAZARD::Run() {
     ClearStop();
     uint64_t instruction_executed = 0;
+
+    //The calling of stages
     while (!stop_requested_ && program_counter_ < program_size_) {
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit() || cycle_s_ >= 100000)break;
         initializeForwardControlSignals();
@@ -1081,6 +1070,7 @@ void RVSSVM_HAZARD::Run() {
         cycle_s_++;
     }
 
+    //The calling of stages
     while(!checkProcessOver()){
         if (instruction_executed > vm_config::config.getInstructionExecutionLimit() || cycle_s_ >= 100000)break;
         initializeForwardControlSignals();
@@ -1148,6 +1138,7 @@ void RVSSVM_HAZARD::Run() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//NOT Implemented
 void RVSSVM_HAZARD::DebugRun() {
     ClearStop();
     uint64_t instruction_executed = 0;
@@ -1199,6 +1190,7 @@ void RVSSVM_HAZARD::DebugRun() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//The step function
 void RVSSVM_HAZARD::Step() {
     current_delta_.old_pc = program_counter_;
     current_delta_.pipeLineSnapShot.old_IF_ID = IF_ID;
@@ -1288,6 +1280,7 @@ void RVSSVM_HAZARD::Step() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//The undo step
 void RVSSVM_HAZARD::Undo() {
     if (undo_stack_.empty()) {
         std::cout << "VM_NO_MORE_UNDO" << std::endl;
@@ -1298,12 +1291,6 @@ void RVSSVM_HAZARD::Undo() {
     StepDelta last = undo_stack_.top();
     undo_stack_.pop();
 
-    // if (!history_.can_undo()) {
-    //     std::cout << "Nothing to undo.\n";
-    //     return;
-    // }
-
-    // StepDelta last = history_.undo();
 
     for (const auto &change : last.register_changes) {
         switch (change.reg_type) {
@@ -1364,6 +1351,7 @@ void RVSSVM_HAZARD::Undo() {
     DumpState(globals::vm_state_dump_file_path);
 }
 
+//The redo step
 void RVSSVM_HAZARD::Redo() {
     if (redo_stack_.empty()) {
         std::cout << "VM_NO_MORE_REDO" << std::endl;
@@ -1372,13 +1360,6 @@ void RVSSVM_HAZARD::Redo() {
 
     StepDelta next = redo_stack_.top();
     redo_stack_.pop();
-
-    // if (!history_.can_redo()) {
-    //       std::cout << "Nothing to redo.\n";
-    //       return;
-    //   }
-
-    //   StepDelta next = history_.redo();
 
     for (const auto &change : next.register_changes) {
         switch (change.reg_type) {

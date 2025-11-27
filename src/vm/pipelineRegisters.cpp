@@ -1,6 +1,7 @@
 #include <bits/stdc++.h>
 #include "vm/pipelineRegisters.h"
 
+//Constructor
 pipelineRegister::pipelineRegister(){
     this-> instruction = 0;
     this-> readData1 = 0;
@@ -55,6 +56,8 @@ void pipelineRegister::Reset(){
     executeSignal = 0;
     writeBack = 0;
 }
+
+//getter functions
 
 uint32_t pipelineRegister::readInstruction() const{
     return (this->instruction);
@@ -151,6 +154,8 @@ uint64_t pipelineRegister::readProgramCounter() const{
 int64_t pipelineRegister::readNextPC() const{
     return (this->nextPC);
 }
+
+//setter functions
 
 void pipelineRegister::fetchInstruction(uint32_t instruction) {
     this->instruction = instruction;

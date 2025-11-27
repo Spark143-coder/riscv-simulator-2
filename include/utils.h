@@ -1,9 +1,3 @@
-/**
- * @file utils.h
- * @brief Contains utility functions for file I/O and string manipulation.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #ifndef UTILS_H
 #define UTILS_H
 

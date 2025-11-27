@@ -4,6 +4,7 @@
 #include<bits/stdc++.h>
 #include "vm/rvss/rvss_control_unit.h"
 
+//Class definition for the pipelineRegisters and its setter and getter function definitions
 class pipelineRegister{
     private:
         uint32_t instruction;
@@ -85,6 +86,7 @@ class pipelineRegister{
         void modifyNextPC(int64_t nextPC);
 };
 
+//Instances of class replicating pipeline registers
 extern pipelineRegister IF_ID;
 extern pipelineRegister ID_EX;
 extern pipelineRegister EX_MEM;

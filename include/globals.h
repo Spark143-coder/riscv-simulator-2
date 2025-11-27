@@ -1,8 +1,3 @@
-/**
- * @file globals.h
- * @brief Contains global definitions and includes for the assembler.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
 #ifndef GLOBALS_H
 #define GLOBALS_H
 

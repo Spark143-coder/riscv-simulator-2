@@ -1,8 +1,3 @@
-/**
- * @file vm_base.h
- * @brief File containing the base class for the virtual machine
- * @author Vishank Singh, https://VishankSingh
- */
 #ifndef VM_BASE_H
 #define VM_BASE_H
 
@@ -80,13 +75,6 @@ public:
     void RemoveBreakpoint(uint64_t val, bool is_line = true);
     bool CheckBreakpoint(uint64_t address);
 
-    // void fetchInstruction();
-    // void decodeInstruction();
-    // void executeInstruction();
-    // void memoryAccess();
-    // void writeback();
-
-    // void HandleSyscall();
     void PrintString(uint64_t address);
 
     virtual void Run() = 0;

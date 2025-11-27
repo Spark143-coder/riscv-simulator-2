@@ -1,9 +1,3 @@
-/**
- * File Name: alu.cpp
- * Author: Vishank Singh
- * Github: https://github.com/VishankSingh
- */
-
 #include "vm/alu.h"
 #include <cfenv>
 #include <cmath>
@@ -16,16 +10,16 @@ namespace alu {
 
 static std::string decode_fclass(uint16_t res) {
   static const std::vector<std::string> labels = {
-    "-infinity",   
-    "-normal",      
-    "-subnormal", 
-    "-zero",        
-    "+zero",    
-    "+subnormal", 
-    "+normal",    
-    "+infinity",    
+    "-infinity",
+    "-normal",
+    "-subnormal",
+    "-zero",
+    "+zero",
+    "+subnormal",
+    "+normal",
+    "+infinity",
     "signaling NaN",
-    "quiet NaN"   
+    "quiet NaN"
   };
 
   std::string output;

@@ -1,8 +1,4 @@
-/**
- * File Name: command_handler.cpp
- * Author: Vishank Singh
- * Github: https://github.com/VishankSingh
- */
+
 #include "command_handler.h"
 
 #include <string>

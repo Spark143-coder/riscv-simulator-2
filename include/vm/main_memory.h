@@ -1,9 +1,3 @@
-/**
- * @file main_memory.h
- * @brief Contains the definition of the MemoryBlock and Memory classes.
- * @author Vishank Singh, https://github.com/VishankSingh
- */
-
 #ifndef MAIN_MEMORY_H
 #define MAIN_MEMORY_H
 
